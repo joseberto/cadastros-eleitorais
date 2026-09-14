@@ -16,6 +16,8 @@ import {
   FileJson,
   AlertTriangle,
   CheckCircle2,
+  Check,
+  CheckCheck,
   Search,
   RotateCcw,
   ChevronLeft,
@@ -89,12 +91,13 @@ const orderLabels: Record<SortKey, string> = {
   title: 'Número do título',
   zone: 'Zona',
   section: 'Seção',
-  indication: 'Indicação'
+  indication: 'Indicação',
+  marked: 'Marcados'
 };
 
 const slots = [93.63, 221.87, 351.54, 483.18, 619.50];
 type PrintItem = { person: Person; number: number; top: number };
-type ImportRow = { index: number; data?: RecordData; error?: string; duplicate?: boolean };
+type ImportRow = { index: number; data?: RecordData & { marked?: boolean }; error?: string; duplicate?: boolean; alreadyMarked?: boolean };
 
 export default function App() {
   const [records, setRecords] = useState<Person[]>([]);
@@ -104,6 +107,7 @@ export default function App() {
   const [desc, setDesc] = useState(false);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<RecordData>({ ...blank });
+  const [draftMarked, setDraftMarked] = useState(false);
   const [editing, setEditing] = useState<Person | null>(null);
   const [formError, setFormError] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -127,7 +131,7 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const sanitized = parsed.map(item => ({ ...blank, ...item }));
+          const sanitized = parsed.map(item => ({ ...blank, marked: false, ...item }));
           setRecords(sanitized);
           return;
         }
@@ -136,7 +140,7 @@ export default function App() {
       console.error('Erro ao ler LocalStorage:', e);
     }
     // Caso não haja nada salvo, utiliza a lista inicial
-    const baseList = ((initialCadastros as Person[]) || []).map(item => ({ ...blank, ...item }));
+    const baseList = ((initialCadastros as Person[]) || []).map(item => ({ ...blank, marked: false, ...item }));
     setRecords(baseList);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(baseList));
@@ -156,6 +160,13 @@ export default function App() {
     });
     if (message) setNotice(message);
   }, []);
+
+  // Alternar status marcado de um registro individual
+  const toggleMarkPerson = useCallback((id: string) => {
+    updateRecords(old =>
+      old.map(x => (x.id === id ? { ...x, marked: !x.marked, updated: new Date().toISOString() } : x))
+    );
+  }, [updateRecords]);
 
   const [selectedIndication, setSelectedIndication] = useState<string>('all');
 
@@ -190,6 +201,17 @@ export default function App() {
     });
   }, [records, selectedIndication, searchTerm]);
 
+  // Marcar ou desmarcar todos os registros filtrados
+  const markFilteredRecords = useCallback((mark: boolean) => {
+    const targetIds = new Set(filteredRecords.map(r => r.id));
+    if (!targetIds.size) return;
+    updateRecords(
+      old =>
+        old.map(x => (targetIds.has(x.id) ? { ...x, marked: mark, updated: new Date().toISOString() } : x)),
+      `${targetIds.size} cadastro(s) ${mark ? 'marcado(s)' : 'desmarcado(s)'} com sucesso.`
+    );
+  }, [filteredRecords, updateRecords]);
+
   const sorted = useMemo(() => sortRecords(filteredRecords, sort, desc), [filteredRecords, sort, desc]);
 
   const [pageSize, setPageSize] = useState<number>(20);
@@ -217,6 +239,7 @@ export default function App() {
   const start = useCallback((person?: Person) => {
     setEditing(person || null);
     setDraft(person ? (Object.fromEntries(fields.map(k => [k, person[k] || ''])) as RecordData) : { ...blank });
+    setDraftMarked(person ? !!person.marked : false);
     setFormError('');
     setOpen(true);
   }, []);
@@ -236,6 +259,7 @@ export default function App() {
       const updatedPerson: Person = {
         ...editing,
         ...validatedData,
+        marked: draftMarked,
         revision: (editing.revision || 1) + 1,
         updated: new Date().toISOString()
       };
@@ -244,6 +268,7 @@ export default function App() {
       const newPerson: Person = {
         id: crypto.randomUUID(),
         ...validatedData,
+        marked: draftMarked,
         revision: 1,
         updated: new Date().toISOString()
       };
@@ -271,8 +296,8 @@ export default function App() {
   }
 
   function resetToDefault() {
-    if (window.confirm('Deseja restaurar a lista original de 18 cadastros? Alterações não exportadas serão sobrescritas.')) {
-      const baseList = (initialCadastros as Person[]) || [];
+    if (window.confirm('Deseja restaurar a lista original de cadastros? Alterações não exportadas serão sobrescritas.')) {
+      const baseList = ((initialCadastros as Person[]) || []).map(item => ({ ...blank, marked: false, ...item }));
       updateRecords(() => baseList, 'Lista restaurada para os dados padrão.');
     }
   }
@@ -294,14 +319,23 @@ export default function App() {
       if (list.length > 5000) throw new Error('O limite é de 5.000 cadastros por arquivo.');
 
       const known = new Set(records.map(recordIdentity).filter(Boolean));
+      const markedIdentities = new Set(
+        records.filter(r => r.marked).map(recordIdentity).filter(Boolean)
+      );
+
       const rows: ImportRow[] = [];
       list.forEach((raw, index) => {
         try {
-          const data = validate(normalizeImportRecord(raw));
-          const key = recordIdentity(data);
+          const norm = normalizeImportRecord(raw);
+          const validated = validate(norm) as RecordData & { marked?: boolean };
+          validated.marked = norm.marked;
+
+          const key = recordIdentity(validated);
           const duplicate = !!key && known.has(key);
-          if (key) known.add(key);
-          rows.push({ index: index + 1, data, duplicate });
+          const alreadyMarked = !!norm.marked || (!!key && markedIdentities.has(key));
+
+          if (key && !duplicate) known.add(key);
+          rows.push({ index: index + 1, data: validated, duplicate, alreadyMarked });
         } catch (err) {
           rows.push({ index: index + 1, error: (err as Error).message });
         }
@@ -317,19 +351,22 @@ export default function App() {
   }
 
   function runImport() {
-    const ready = importRows.filter(r => r.data && !r.duplicate).map(r => r.data as RecordData);
+    const ready = importRows
+      .filter(r => r.data && !r.duplicate && !r.alreadyMarked)
+      .map(r => r.data as RecordData & { marked?: boolean });
     if (!ready.length) return;
 
     const newPersons: Person[] = ready.map(d => ({
       id: crypto.randomUUID(),
       ...d,
+      marked: false,
       revision: 1,
       updated: new Date().toISOString()
     }));
 
     updateRecords(
       old => [...old, ...newPersons],
-      `${newPersons.length} cadastro(s) importado(s) com sucesso.`
+      `${newPersons.length} cadastro(s) importado(s) com sucesso. Cadastros marcados foram ignorados.`
     );
     setImportOpen(false);
     setImportRows([]);
@@ -534,6 +571,46 @@ export default function App() {
                     )}
                   </SelectContent>
                 </Select>
+
+                {/* Botões para Marcar e Desmarcar registros filtrados */}
+                {filteredRecords.length > 0 && (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => markFilteredRecords(true)}
+                      style={{
+                        height: '32px',
+                        fontSize: '12px',
+                        padding: '0 10px',
+                        color: '#0f766e',
+                        borderColor: '#99f6e4',
+                        backgroundColor: '#f0fdfa',
+                        fontWeight: 600
+                      }}
+                      title={`Marcar todos os ${filteredRecords.length} cadastros filtrados`}
+                    >
+                      <CheckCheck size={15} style={{ marginRight: '4px' }} /> Marcar
+                    </Button>
+                    {filteredRecords.some(r => r.marked) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => markFilteredRecords(false)}
+                        style={{
+                          height: '32px',
+                          fontSize: '12px',
+                          padding: '0 8px',
+                          color: '#64748b'
+                        }}
+                        title={`Desmarcar todos os ${filteredRecords.length} cadastros filtrados`}
+                      >
+                        Desmarcar
+                      </Button>
+                    )}
+                  </div>
+                )}
+
                 {selectedIndication !== 'all' && (
                   <Button
                     variant="ghost"
@@ -561,6 +638,23 @@ export default function App() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="number-col">Nº</TableHead>
+                  <TableHead style={{ width: '80px', textAlign: 'center' }}>
+                    <button
+                      className="column-sort"
+                      style={{ justifyContent: 'center', width: '100%' }}
+                      onClick={() => {
+                        if (sort === 'marked') setDesc(!desc);
+                        else {
+                          setSort('marked');
+                          setDesc(false);
+                        }
+                      }}
+                      title="Ordenar por cadastros marcados"
+                    >
+                      Marcado
+                      {sort === 'marked' && <span>{desc ? '↓' : '↑'}</span>}
+                    </button>
+                  </TableHead>
                   {(['name', 'title', 'zone', 'section'] as SortKey[]).map(k => (
                     <TableHead key={k} aria-sort={sort === k ? (desc ? 'descending' : 'ascending') : 'none'}>
                       <button
@@ -594,7 +688,7 @@ export default function App() {
                       {sort === 'indication' && <span>{desc ? '↓' : '↑'}</span>}
                     </button>
                   </TableHead>
-                  <TableHead className="action-col">Ações</TableHead>
+                  <TableHead className="action-col" style={{ width: '115px' }}>Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -603,6 +697,31 @@ export default function App() {
                   return (
                     <TableRow key={p.id}>
                       <TableCell className="row-number">{String(rowNumber).padStart(2, '0')}</TableCell>
+                      <TableCell style={{ textAlign: 'center', padding: '8px 4px' }}>
+                        <button
+                          type="button"
+                          onClick={() => toggleMarkPerson(p.id)}
+                          aria-label={p.marked ? `Marcado (${p.name}) - clique para desmarcar` : `Não marcado (${p.name}) - clique para marcar`}
+                          title={p.marked ? 'Marcado - clique para alternar' : 'Não marcado - clique para alternar'}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '6px',
+                            backgroundColor: p.marked ? '#ecfdf5' : '#f8fafc',
+                            color: p.marked ? '#059669' : '#94a3b8',
+                            border: `1px solid ${p.marked ? '#a7f3d0' : '#e2e8f0'}`,
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                            fontSize: '14px',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {p.marked ? <Check size={17} strokeWidth={3} /> : <X size={15} strokeWidth={2.5} />}
+                        </button>
+                      </TableCell>
                       <TableCell className={'person-name ' + (!p.name ? 'missing' : '')}>{shown(p.name)}</TableCell>
                       <TableCell className={'mono ' + (!p.title ? 'missing' : '')}>{shown(p.title)}</TableCell>
                       <TableCell>
@@ -613,6 +732,16 @@ export default function App() {
                       <TableCell className={!p.indication ? 'missing' : ''}>{shown(p.indication)}</TableCell>
                       <TableCell>
                         <div style={{ display: 'flex', gap: '4px' }}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={(p.marked ? 'Desmarcar ' : 'Marcar ') + shown(p.name)}
+                            title={p.marked ? 'Marcado (clique para desmarcar)' : 'Não marcado (clique para marcar)'}
+                            onClick={() => toggleMarkPerson(p.id)}
+                            style={{ color: p.marked ? '#059669' : '#64748b' }}
+                          >
+                            {p.marked ? <CheckCircle2 size={16} /> : <Check size={16} />}
+                          </Button>
                           <Button variant="ghost" size="icon" aria-label={'Editar ' + shown(p.name)} onClick={() => start(p)}>
                             <Pencil size={15} />
                           </Button>
@@ -828,6 +957,18 @@ export default function App() {
                 {input('phone', 'half')}
                 {input('place', 'full')}
                 {input('indication', 'full')}
+                <div className="field full" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '10px', marginTop: '6px', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <input
+                    type="checkbox"
+                    id="draftMarked"
+                    checked={draftMarked}
+                    onChange={e => setDraftMarked(e.target.checked)}
+                    style={{ width: '18px', height: '18px', accentColor: '#127c80', cursor: 'pointer' }}
+                  />
+                  <Label htmlFor="draftMarked" style={{ cursor: 'pointer', margin: 0, fontWeight: 600, fontSize: '14px', color: '#1e293b' }}>
+                    Marcar este cadastro (marcado com "V" na lista)
+                  </Label>
+                </div>
               </div>
             </fieldset>
             {formError && (
@@ -907,10 +1048,16 @@ export default function App() {
                 </span>
                 <span className="ok">
                   <CheckCircle2 size={18} />
-                  <strong>{importRows.filter(r => r.data && !r.duplicate).length}</strong> prontos
+                  <strong>{importRows.filter(r => r.data && !r.duplicate && !r.alreadyMarked).length}</strong> prontos (não marcados)
                 </span>
+                {importRows.some(r => r.alreadyMarked) && (
+                  <span style={{ color: '#b45309', background: '#fef3c7', borderColor: '#fde68a' }}>
+                    <AlertTriangle size={18} />
+                    <strong>{importRows.filter(r => r.alreadyMarked).length}</strong> já marcados (ignorados)
+                  </span>
+                )}
                 <span>
-                  <strong>{importRows.filter(r => r.duplicate).length}</strong> repetidos
+                  <strong>{importRows.filter(r => r.duplicate && !r.alreadyMarked).length}</strong> repetidos
                 </span>
                 <span className={importRows.some(r => r.error) ? 'warn' : ''}>
                   <AlertTriangle size={18} />
@@ -918,7 +1065,7 @@ export default function App() {
                 </span>
               </div>
               <p className="import-help">
-                Registros repetidos são ignorados automaticamente para evitar duplicações.
+                Apenas cadastros <strong>não marcados</strong> são importados. Registros repetidos ou já marcados são ignorados automaticamente.
               </p>
               <div className="import-preview">
                 <Table>
@@ -945,6 +1092,10 @@ export default function App() {
                         <TableCell>
                           {row.error ? (
                             <span className="status-error">{row.error}</span>
+                          ) : row.alreadyMarked ? (
+                            <span style={{ color: '#b45309', fontWeight: 600, background: '#fef3c7', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', display: 'inline-block' }}>
+                              Ignorado (Marcado)
+                            </span>
                           ) : row.duplicate ? (
                             <span className="status-dup">Repetido</span>
                           ) : (
@@ -971,10 +1122,10 @@ export default function App() {
               </Button>
               <Button
                 type="button"
-                disabled={!importRows.some(r => r.data && !r.duplicate)}
+                disabled={!importRows.some(r => r.data && !r.duplicate && !r.alreadyMarked)}
                 onClick={runImport}
               >
-                {`Importar ${importRows.filter(r => r.data && !r.duplicate).length}`}
+                {`Importar ${importRows.filter(r => r.data && !r.duplicate && !r.alreadyMarked).length}`}
               </Button>
             </div>
           </div>

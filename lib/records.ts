@@ -1,7 +1,7 @@
 export const fields = ['name','title','zone','section','birth','city','uf','address','cpf','phone','place','indication'] as const;
 export type Field = typeof fields[number];
 export type RecordData = { [K in Field]: string };
-export type Person = RecordData & {id:string; revision:number; updated:string};
+export type Person = RecordData & {id:string; revision:number; updated:string; marked?: boolean};
 export const blank = Object.fromEntries(fields.map(k=>[k,''])) as RecordData;
 export const states = 'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
 export const digits = (v?: string | null) => (typeof v === 'string' ? v.replace(/\D/g,'') : '');
@@ -67,15 +67,31 @@ function cleanImportedValue(value:unknown):string {
  return /^(nao informado|não informado|n\/a|null|undefined|-|—)$/i.test(text)?'':text;
 }
 
-export function normalizeImportRecord(input:unknown):RecordData {
+export function isMarkedValue(value:unknown):boolean {
+ if(typeof value==='boolean') return value;
+ if(typeof value==='number') return value===1;
+ if(typeof value==='string') {
+  const s=value.trim().toLowerCase();
+  return ['true','sim','s','1','v','marcado','ok','checked','check','atendido','sim/marcado'].includes(s);
+ }
+ return false;
+}
+
+export function normalizeImportRecord(input:unknown):RecordData & {marked?: boolean} {
  if(!input||typeof input!=='object'||Array.isArray(input)) throw new Error('O item não é um cadastro válido.');
- const out={...blank};
+ const out={...blank} as RecordData & {marked?: boolean};
+ let marked = false;
  for(const [rawKey,value] of Object.entries(input as Record<string,unknown>)) {
-  const field=aliases[keyName(rawKey)];
+  const normKey = keyName(rawKey);
+  if(['marcado','marked','marcar','status','atendido','concluido','check','checked'].includes(normKey)) {
+   if(isMarkedValue(value)) marked = true;
+  }
+  const field=aliases[normKey];
   if(field) out[field]=cleanImportedValue(value);
  }
  if(out.uf) out.uf=out.uf.toUpperCase();
  for(const k of ['title','zone','section','birth','cpf','phone'] as Field[]) out[k]=mask(k,out[k]);
+ if(marked) out.marked = true;
  return out;
 }
 
@@ -94,10 +110,16 @@ export function recordIdentity(input:Pick<RecordData,'name'|'title'|'zone'|'sect
  return name?'N:'+name+'|'+digits(input.zone)+'|'+digits(input.section):'';
 }
 
-export type SortKey = 'name'|'title'|'zone'|'section'|'indication';
+export type SortKey = 'name'|'title'|'zone'|'section'|'indication'|'marked';
 export function sortRecords(records:Person[],key:SortKey,descending=false) {
  const c=new Intl.Collator('pt-BR',{sensitivity:'base',numeric:true});
  return [...records].sort((a,b)=>{
+  if(key==='marked') {
+   const valA = a.marked ? 1 : 0;
+   const valB = b.marked ? 1 : 0;
+   const cmp = valB - valA;
+   return (cmp || c.compare(a.name, b.name) || a.id.localeCompare(b.id)) * (descending ? -1 : 1);
+  }
   const valA = a[key] || '';
   const valB = b[key] || '';
   if(!valA && valB) return 1;
