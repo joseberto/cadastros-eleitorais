@@ -76,14 +76,16 @@ const labels: Record<Field, string> = {
   address: 'Endereço',
   cpf: 'CPF',
   phone: 'Celular',
-  place: 'Local de votação'
+  place: 'Local de votação',
+  indication: 'Indicação'
 };
 
 const orderLabels: Record<SortKey, string> = {
   name: 'Nome',
   title: 'Número do título',
   zone: 'Zona',
-  section: 'Seção'
+  section: 'Seção',
+  indication: 'Indicação'
 };
 
 const slots = [93.63, 221.87, 351.54, 483.18, 619.50];
@@ -154,7 +156,7 @@ export default function App() {
     if (!searchTerm.trim()) return records;
     const term = searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     return records.filter(p => {
-      const searchable = `${p.name} ${p.title} ${p.zone} ${p.section} ${p.phone} ${p.address} ${p.city} ${p.cpf}`
+      const searchable = `${p.name} ${p.title} ${p.zone} ${p.section} ${p.phone} ${p.address} ${p.city} ${p.cpf} ${p.indication || ''}`
         .toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '');
@@ -336,7 +338,8 @@ export default function App() {
             section: '0000',
             birth: 'DD/MM/AAAA',
             cpf: '000.000.000-00',
-            phone: '(00) 00000-0000'
+            phone: '(00) 00000-0000',
+            indication: 'Nome de quem indicou / Liderança'
           } as Partial<Record<Field, string>>)[k] || 'Não informado'
         }
         autoComplete="off"
@@ -490,6 +493,21 @@ export default function App() {
                     </TableHead>
                   ))}
                   <TableHead>Celular</TableHead>
+                  <TableHead aria-sort={sort === 'indication' ? (desc ? 'descending' : 'ascending') : 'none'}>
+                    <button
+                      className="column-sort"
+                      onClick={() => {
+                        if (sort === 'indication') setDesc(!desc);
+                        else {
+                          setSort('indication');
+                          setDesc(false);
+                        }
+                      }}
+                    >
+                      Indicação
+                      {sort === 'indication' && <span>{desc ? '↓' : '↑'}</span>}
+                    </button>
+                  </TableHead>
                   <TableHead className="action-col">Ações</TableHead>
                 </TableRow>
               </TableHeader>
@@ -504,6 +522,7 @@ export default function App() {
                     </TableCell>
                     <TableCell className="mono">{p.section}</TableCell>
                     <TableCell className={!p.phone ? 'missing' : 'mono'}>{shown(p.phone)}</TableCell>
+                    <TableCell className={!p.indication ? 'missing' : ''}>{shown(p.indication)}</TableCell>
                     <TableCell>
                       <div style={{ display: 'flex', gap: '4px' }}>
                         <Button variant="ghost" size="icon" aria-label={'Editar ' + shown(p.name)} onClick={() => start(p)}>
@@ -624,6 +643,7 @@ export default function App() {
                 {input('cpf', 'half')}
                 {input('phone', 'half')}
                 {input('place', 'full')}
+                {input('indication', 'full')}
               </div>
             </fieldset>
             {formError && (
@@ -725,6 +745,7 @@ export default function App() {
                       <TableHead>Título</TableHead>
                       <TableHead>Zona</TableHead>
                       <TableHead>Seção</TableHead>
+                      <TableHead>Indicação</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -736,6 +757,7 @@ export default function App() {
                         <TableCell className="mono">{row.data ? shown(row.data.title) : '—'}</TableCell>
                         <TableCell>{row.data?.zone || '—'}</TableCell>
                         <TableCell>{row.data?.section || '—'}</TableCell>
+                        <TableCell>{row.data?.indication || '—'}</TableCell>
                         <TableCell>
                           {row.error ? (
                             <span className="status-error">{row.error}</span>
@@ -757,7 +779,7 @@ export default function App() {
           )}
           <div className="modal-footer import-footer">
             <span>
-              Campos aceitos: nome, título, zona, seção, nascimento, município, UF, endereço, CPF, celular e local de votação.
+              Campos aceitos: nome, título, zona, seção, nascimento, município, UF, endereço, CPF, celular, local de votação e indicação.
             </span>
             <div>
               <Button type="button" variant="outline" onClick={() => setImportOpen(false)}>

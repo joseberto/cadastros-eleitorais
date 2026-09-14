@@ -6,5 +6,6 @@ export function Card({person:p,number}:{person:Person;number:number}) {
   <p><b>Endereço:</b> {shown(p.address)}</p>
   <p><b>CPF:</b> {shown(p.cpf)}<span className="divider">|</span><b>Celular:</b> {shown(p.phone)}</p>
   <p><b>Local de votação:</b> {shown(p.place)}</p>
+  {p.indication && <p><b>Indicação:</b> {shown(p.indication)}</p>}
  </div></article>;
 }

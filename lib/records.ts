@@ -1,4 +1,4 @@
-export const fields = ['name','title','zone','section','birth','city','uf','address','cpf','phone','place'] as const;
+export const fields = ['name','title','zone','section','birth','city','uf','address','cpf','phone','place','indication'] as const;
 export type Field = typeof fields[number];
 export type RecordData = { [K in Field]: string };
 export type Person = RecordData & {id:string; revision:number; updated:string};
@@ -20,7 +20,7 @@ export function mask(field:Field, value:string) {
 export function validate(input:unknown):RecordData {
  if(!input || typeof input!=='object' || Array.isArray(input)) throw new Error('Cadastro inválido.');
  const data={...blank}, source=input as Record<string,unknown>;
- const limits:Partial<Record<Field,number>>={name:160,city:120,address:400,place:300};
+ const limits:Partial<Record<Field,number>>={name:160,city:120,address:400,place:300,indication:160};
  for(const k of fields) {
   if(source[k]!==undefined && typeof source[k]!=='string') throw new Error('Campo inválido: '+k);
   data[k]=(source[k] as string || '').trim();
@@ -55,6 +55,7 @@ const aliases:Record<string,Field>={
  cpf:'cpf',
  phone:'phone',celular:'phone',telefone:'phone',fone:'phone',
  place:'place',local:'place',localdevotacao:'place',locavotacao:'place',
+ indication:'indication',indicacao:'indication',indicadopor:'indication',indicado:'indication',indicador:'indication',referencia:'indication',lideranca:'indication',
 };
 // Corrige a entrada "estado" sem aceitar valores fora das UFs.
 aliases.estado='uf';
@@ -92,12 +93,17 @@ export function recordIdentity(input:Pick<RecordData,'name'|'title'|'zone'|'sect
  return name?'N:'+name+'|'+digits(input.zone)+'|'+digits(input.section):'';
 }
 
-export type SortKey = 'name'|'title'|'zone'|'section';
+export type SortKey = 'name'|'title'|'zone'|'section'|'indication';
 export function sortRecords(records:Person[],key:SortKey,descending=false) {
  const c=new Intl.Collator('pt-BR',{sensitivity:'base',numeric:true});
  return [...records].sort((a,b)=>{
-  if(!a[key]&&b[key]) return 1; if(a[key]&&!b[key]) return -1;
-  const cmp=key==='name'?c.compare(a.name,b.name):Number(digits(a[key]))-Number(digits(b[key]));
-  return (cmp||c.compare(a.name,b.name)||a.id.localeCompare(b.id))*(descending?-1:1);
+  const valA = a[key] || '';
+  const valB = b[key] || '';
+  if(!valA && valB) return 1;
+  if(valA && !valB) return -1;
+  const cmp = ['name', 'indication'].includes(key)
+    ? c.compare(valA, valB)
+    : Number(digits(valA)) - Number(digits(valB));
+  return (cmp || c.compare(a.name, b.name) || a.id.localeCompare(b.id)) * (descending ? -1 : 1);
  });
 }
