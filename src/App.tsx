@@ -153,17 +153,38 @@ export default function App() {
     if (message) setNotice(message);
   }, []);
 
+  const [selectedIndication, setSelectedIndication] = useState<string>('all');
+
+  const uniqueIndications = useMemo(() => {
+    const set = new Set<string>();
+    records.forEach(r => {
+      const ind = (r.indication || '').trim();
+      if (ind) set.add(ind);
+    });
+    const c = new Intl.Collator('pt-BR', { sensitivity: 'base' });
+    return Array.from(set).sort((a, b) => c.compare(a, b));
+  }, [records]);
+
+  const hasUnassigned = useMemo(() => records.some(r => !(r.indication || '').trim()), [records]);
+
   const filteredRecords = useMemo(() => {
-    if (!searchTerm.trim()) return records;
+    let list = records;
+    if (selectedIndication === 'none') {
+      list = list.filter(p => !(p.indication || '').trim());
+    } else if (selectedIndication !== 'all') {
+      list = list.filter(p => (p.indication || '').trim().toLowerCase() === selectedIndication.toLowerCase());
+    }
+
+    if (!searchTerm.trim()) return list;
     const term = searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    return records.filter(p => {
+    return list.filter(p => {
       const searchable = `${p.name} ${p.title} ${p.zone} ${p.section} ${p.phone} ${p.address} ${p.city} ${p.cpf} ${p.indication || ''}`
         .toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '');
       return searchable.includes(term);
     });
-  }, [records, searchTerm]);
+  }, [records, selectedIndication, searchTerm]);
 
   const sorted = useMemo(() => sortRecords(filteredRecords, sort, desc), [filteredRecords, sort, desc]);
 
@@ -437,30 +458,68 @@ export default function App() {
               </div>
             </div>
 
-            <div className="sortbar">
-              <span>Ordenar por</span>
-              <Select value={sort} onValueChange={v => setSort(v as SortKey)}>
-                <SelectTrigger aria-label="Ordenar por" className="sort-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(orderLabels).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>
-                      {v}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={desc ? 'Usar ordem crescente' : 'Usar ordem decrescente'}
-                title={desc ? 'Ordem decrescente' : 'Ordem crescente'}
-                onClick={() => setDesc(!desc)}
-              >
-                {desc ? <ArrowUpAZ /> : <ArrowDownAZ />}
-              </Button>
-              <span className="sort-summary">{desc ? 'Ordem decrescente' : 'Ordem crescente'}</span>
+            <div className="sortbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span>Ordenar por</span>
+                <Select value={sort} onValueChange={v => setSort(v as SortKey)}>
+                  <SelectTrigger aria-label="Ordenar por" className="sort-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(orderLabels).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>
+                        {v}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={desc ? 'Usar ordem crescente' : 'Usar ordem decrescente'}
+                  title={desc ? 'Ordem decrescente' : 'Ordem crescente'}
+                  onClick={() => setDesc(!desc)}
+                >
+                  {desc ? <ArrowUpAZ /> : <ArrowDownAZ />}
+                </Button>
+                <span className="sort-summary">{desc ? 'Ordem decrescente' : 'Ordem crescente'}</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span>Filtrar por indicação</span>
+                <Select value={selectedIndication} onValueChange={v => setSelectedIndication(v)}>
+                  <SelectTrigger aria-label="Filtrar por indicação" className="sort-select" style={{ minWidth: '190px' }}>
+                    <SelectValue placeholder="Todas as indicações" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as indicações ({records.length})</SelectItem>
+                    {uniqueIndications.map(ind => {
+                      const count = records.filter(r => (r.indication || '').trim().toLowerCase() === ind.toLowerCase()).length;
+                      return (
+                        <SelectItem key={ind} value={ind}>
+                          {ind} ({count})
+                        </SelectItem>
+                      );
+                    })}
+                    {hasUnassigned && (
+                      <SelectItem value="none">
+                        Sem indicação ({records.filter(r => !(r.indication || '').trim()).length})
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {selectedIndication !== 'all' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedIndication('all')}
+                    style={{ fontSize: '12px', color: '#667c8a', padding: '0 8px', height: '32px' }}
+                    title="Limpar filtro de indicação"
+                  >
+                    <X size={14} style={{ marginRight: '4px' }} /> Limpar
+                  </Button>
+                )}
+              </div>
             </div>
 
             {notice && (
@@ -550,12 +609,23 @@ export default function App() {
                 <span className="empty-icon">
                   <UsersRound size={30} />
                 </span>
-                <h3>{searchTerm ? 'Nenhum resultado encontrado' : 'Sua lista está vazia'}</h3>
+                <h3>
+                  {selectedIndication !== 'all'
+                    ? `Nenhum cadastro encontrado para "${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}"`
+                    : searchTerm
+                    ? 'Nenhum resultado encontrado'
+                    : 'Sua lista está vazia'}
+                </h3>
                 <p>
-                  {searchTerm
-                    ? `Não encontramos registros para "${searchTerm}".`
+                  {selectedIndication !== 'all' || searchTerm
+                    ? 'Tente alterar os filtros ou limpar a pesquisa.'
                     : 'Adicione o primeiro cadastro ou importe um arquivo JSON.'}
                 </p>
+                {selectedIndication !== 'all' && (
+                  <Button variant="outline" onClick={() => { setSelectedIndication('all'); setSearchTerm(''); }}>
+                    Limpar filtros
+                  </Button>
+                )}
                 {!records.length && (
                   <Button onClick={() => start()}>
                     <Plus /> Cadastrar pessoa
@@ -567,7 +637,8 @@ export default function App() {
             <footer className="table-footer">
               <span>
                 {records.length} {records.length === 1 ? 'cadastro' : 'cadastros'}
-                {searchTerm && ` (${sorted.length} exibidos na busca)`}
+                {selectedIndication !== 'all' && ` · Filtrado por: "${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}" (${sorted.length})`}
+                {searchTerm && ` (${sorted.length} na busca)`}
               </span>
               <button
                 onClick={resetToDefault}
@@ -809,6 +880,7 @@ export default function App() {
               <strong>Prévia de impressão</strong>
               <span>
                 {sorted.length} fichas · {pages.length} páginas · {orderLabels[sort]}
+                {selectedIndication !== 'all' ? ` · Indicação: ${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}` : ''}
               </span>
             </div>
             <Button disabled={!printReady} onClick={() => window.print()}>
