@@ -6,6 +6,7 @@ export const blank = Object.fromEntries(fields.map(k=>[k,''])) as RecordData;
 export const states = 'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
 export const digits = (v:string) => v.replace(/\D/g,'');
 export const shown = (v:string) => v.trim() || 'Não informado';
+
 export function mask(field:Field, value:string) {
  if(field==='title') return digits(value).slice(0,12).replace(/(\d{4})(?=\d)/g,'$1 ');
  if(field==='zone') return digits(value).slice(0,3);
@@ -15,6 +16,7 @@ export function mask(field:Field, value:string) {
  if(field==='phone') { const d=digits(value).slice(0,11); if(d.length<3) return d?'('+d:''; const tail=d.slice(2),n=d.length>10?5:4; return '('+d.slice(0,2)+') '+tail.slice(0,n)+(tail.length>n?'-'+tail.slice(n):''); }
  return value;
 }
+
 export function validate(input:unknown):RecordData {
  if(!input || typeof input!=='object' || Array.isArray(input)) throw new Error('Cadastro inválido.');
  const data={...blank}, source=input as Record<string,unknown>;
@@ -39,6 +41,57 @@ export function validate(input:unknown):RecordData {
  data.zone=data.zone.padStart(3,'0'); data.section=data.section.padStart(4,'0');
  return data;
 }
+
+const keyName=(v:string)=>v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const aliases:Record<string,Field>={
+ name:'name',nome:'name',nomecompleto:'name',
+ title:'title',titulo:'title',titulodeeleitor:'title',numerodotitulo:'title',numerotitulo:'title',inscricao:'title',
+ zone:'zone',zona:'zone',
+ section:'section',secao:'section',sessao:'section',
+ birth:'birth',nascimento:'birth',datadenascimento:'birth',datanascimento:'birth',
+ city:'city',cidade:'city',municipio:'city',municipiodotitulo:'city',
+ uf:'uf',estado:'uf',ufdotitulo:'uf',
+ address:'address',endereco:'address',
+ cpf:'cpf',
+ phone:'phone',celular:'phone',telefone:'phone',fone:'phone',
+ place:'place',local:'place',localdevotacao:'place',locavotacao:'place',
+};
+// Corrige a entrada "estado" sem aceitar valores fora das UFs.
+aliases.estado='uf';
+
+function cleanImportedValue(value:unknown):string {
+ if(value===null||value===undefined) return '';
+ const text=String(value).trim();
+ return /^(nao informado|não informado|n\/a|null|undefined|-|—)$/i.test(text)?'':text;
+}
+
+export function normalizeImportRecord(input:unknown):RecordData {
+ if(!input||typeof input!=='object'||Array.isArray(input)) throw new Error('O item não é um cadastro válido.');
+ const out={...blank};
+ for(const [rawKey,value] of Object.entries(input as Record<string,unknown>)) {
+  const field=aliases[keyName(rawKey)];
+  if(field) out[field]=cleanImportedValue(value);
+ }
+ if(out.uf) out.uf=out.uf.toUpperCase();
+ for(const k of ['title','zone','section','birth','cpf','phone'] as Field[]) out[k]=mask(k,out[k]);
+ return out;
+}
+
+export function extractImportRecords(payload:unknown):unknown[] {
+ if(Array.isArray(payload)) return payload;
+ if(!payload||typeof payload!=='object') throw new Error('O JSON precisa conter uma lista de cadastros.');
+ const obj=payload as Record<string,unknown>;
+ for(const key of ['records','cadastros','registros','data','dados','pessoas']) if(Array.isArray(obj[key])) return obj[key] as unknown[];
+ throw new Error('Não encontrei a lista. Use um array ou uma propriedade "records"/"cadastros".');
+}
+
+export function recordIdentity(input:Pick<RecordData,'name'|'title'|'zone'|'section'|'cpf'>):string {
+ const title=digits(input.title); if(title.length===12) return 'T:'+title;
+ const cpf=digits(input.cpf); if(cpf.length===11) return 'C:'+cpf;
+ const name=input.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+ return name?'N:'+name+'|'+digits(input.zone)+'|'+digits(input.section):'';
+}
+
 export type SortKey = 'name'|'title'|'zone'|'section';
 export function sortRecords(records:Person[],key:SortKey,descending=false) {
  const c=new Intl.Collator('pt-BR',{sensitivity:'base',numeric:true});
