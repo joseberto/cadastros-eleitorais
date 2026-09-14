@@ -123,7 +123,8 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setRecords(parsed);
+          const sanitized = parsed.map(item => ({ ...blank, ...item }));
+          setRecords(sanitized);
           return;
         }
       }
@@ -131,7 +132,7 @@ export default function App() {
       console.error('Erro ao ler LocalStorage:', e);
     }
     // Caso não haja nada salvo, utiliza a lista inicial
-    const baseList = (initialCadastros as Person[]) || [];
+    const baseList = ((initialCadastros as Person[]) || []).map(item => ({ ...blank, ...item }));
     setRecords(baseList);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(baseList));

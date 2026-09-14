@@ -4,10 +4,11 @@ export type RecordData = { [K in Field]: string };
 export type Person = RecordData & {id:string; revision:number; updated:string};
 export const blank = Object.fromEntries(fields.map(k=>[k,''])) as RecordData;
 export const states = 'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
-export const digits = (v:string) => v.replace(/\D/g,'');
-export const shown = (v:string) => v.trim() || 'Não informado';
+export const digits = (v?: string | null) => (typeof v === 'string' ? v.replace(/\D/g,'') : '');
+export const shown = (v?: string | null) => (typeof v === 'string' ? v.trim() : '') || 'Não informado';
 
-export function mask(field:Field, value:string) {
+export function mask(field:Field, value?: string | null) {
+ if(!value || typeof value !== 'string') return '';
  if(field==='title') return digits(value).slice(0,12).replace(/(\d{4})(?=\d)/g,'$1 ');
  if(field==='zone') return digits(value).slice(0,3);
  if(field==='section') return digits(value).slice(0,4);
