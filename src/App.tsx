@@ -17,7 +17,11 @@ import {
   AlertTriangle,
   CheckCircle2,
   Search,
-  RotateCcw
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { Card } from '@/app/report-card';
 import { Button } from '@/components/ui/button';
@@ -187,6 +191,28 @@ export default function App() {
   }, [records, selectedIndication, searchTerm]);
 
   const sorted = useMemo(() => sortRecords(filteredRecords, sort, desc), [filteredRecords, sort, desc]);
+
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  const totalPages = useMemo(() => Math.ceil(sorted.length / pageSize) || 1, [sorted.length, pageSize]);
+
+  // Retorna à página 1 caso os filtros, ordenação ou tamanho de página mudem
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedIndication, sort, desc, pageSize]);
+
+  // Garante que a página atual seja válida caso o número total de páginas diminua
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  const paginatedRecords = useMemo(() => {
+    const startIdx = (currentPage - 1) * pageSize;
+    return sorted.slice(startIdx, startIdx + pageSize);
+  }, [sorted, currentPage, pageSize]);
 
   const start = useCallback((person?: Person) => {
     setEditing(person || null);
@@ -572,37 +598,123 @@ export default function App() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sorted.map((p, i) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="row-number">{String(i + 1).padStart(2, '0')}</TableCell>
-                    <TableCell className={'person-name ' + (!p.name ? 'missing' : '')}>{shown(p.name)}</TableCell>
-                    <TableCell className={'mono ' + (!p.title ? 'missing' : '')}>{shown(p.title)}</TableCell>
-                    <TableCell>
-                      <span className="zone-badge">{p.zone}</span>
-                    </TableCell>
-                    <TableCell className="mono">{p.section}</TableCell>
-                    <TableCell className={!p.phone ? 'missing' : 'mono'}>{shown(p.phone)}</TableCell>
-                    <TableCell className={!p.indication ? 'missing' : ''}>{shown(p.indication)}</TableCell>
-                    <TableCell>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <Button variant="ghost" size="icon" aria-label={'Editar ' + shown(p.name)} onClick={() => start(p)}>
-                          <Pencil size={15} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={'Excluir ' + shown(p.name)}
-                          style={{ color: '#c53030' }}
-                          onClick={() => setDeleteConfirmId(p.id)}
-                        >
-                          <Trash2 size={15} />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {paginatedRecords.map((p, i) => {
+                  const rowNumber = (currentPage - 1) * pageSize + i + 1;
+                  return (
+                    <TableRow key={p.id}>
+                      <TableCell className="row-number">{String(rowNumber).padStart(2, '0')}</TableCell>
+                      <TableCell className={'person-name ' + (!p.name ? 'missing' : '')}>{shown(p.name)}</TableCell>
+                      <TableCell className={'mono ' + (!p.title ? 'missing' : '')}>{shown(p.title)}</TableCell>
+                      <TableCell>
+                        <span className="zone-badge">{p.zone}</span>
+                      </TableCell>
+                      <TableCell className="mono">{p.section}</TableCell>
+                      <TableCell className={!p.phone ? 'missing' : 'mono'}>{shown(p.phone)}</TableCell>
+                      <TableCell className={!p.indication ? 'missing' : ''}>{shown(p.indication)}</TableCell>
+                      <TableCell>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <Button variant="ghost" size="icon" aria-label={'Editar ' + shown(p.name)} onClick={() => start(p)}>
+                            <Pencil size={15} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={'Excluir ' + shown(p.name)}
+                            style={{ color: '#c53030' }}
+                            onClick={() => setDeleteConfirmId(p.id)}
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
+
+            {/* Controles de Paginação */}
+            {sorted.length > 0 && (
+              <div
+                className="pagination-bar"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  padding: '14px 20px',
+                  background: '#f8fafc',
+                  borderTop: '1px solid #e2e8f0'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#475569', flexWrap: 'wrap' }}>
+                  <span>Itens por página:</span>
+                  <Select value={String(pageSize)} onValueChange={v => setPageSize(Number(v))}>
+                    <SelectTrigger className="sort-select" style={{ width: '85px', height: '32px' }}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[10, 20, 50, 100, 200].map(size => (
+                        <SelectItem key={size} value={String(size)}>
+                          {size}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span style={{ color: '#64748b' }}>
+                    Exibindo <strong>{(currentPage - 1) * pageSize + 1}</strong>–
+                    <strong>{Math.min(currentPage * pageSize, sorted.length)}</strong> de <strong>{sorted.length}</strong>
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage(1)}
+                    title="Primeira página"
+                    style={{ height: '32px', width: '32px', padding: 0 }}
+                  >
+                    <ChevronsLeft size={16} />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    title="Página anterior"
+                    style={{ height: '32px', width: '32px', padding: 0 }}
+                  >
+                    <ChevronLeft size={16} />
+                  </Button>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155', padding: '0 8px' }}>
+                    Página {currentPage} de {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    title="Próxima página"
+                    style={{ height: '32px', width: '32px', padding: 0 }}
+                  >
+                    <ChevronRight size={16} />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage(totalPages)}
+                    title="Última página"
+                    style={{ height: '32px', width: '32px', padding: 0 }}
+                  >
+                    <ChevronsRight size={16} />
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {!sorted.length && (
               <div className="empty">
