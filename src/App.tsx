@@ -63,6 +63,7 @@ import {
     shown,
     states,
     validate,
+    formatIndication,
     sortRecords,
     extractImportRecords,
     normalizeImportRecord,
@@ -171,7 +172,12 @@ export default function App() {
             if (saved) {
                 const parsed = JSON.parse(saved);
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    const sanitized = parsed.map(item => ({ ...blank, marked: false, ...item }));
+                    const sanitized = parsed.map(item => ({
+                        ...blank,
+                        marked: false,
+                        ...item,
+                        indication: formatIndication(item.indication)
+                    }));
                     setRecords(sanitized);
                     return;
                 }
@@ -180,7 +186,12 @@ export default function App() {
             console.error('Erro ao ler LocalStorage:', e);
         }
         // Caso não haja nada salvo, utiliza a lista inicial
-        const baseList = ((initialCadastros as Person[]) || []).map(item => ({ ...blank, marked: false, ...item }));
+        const baseList = ((initialCadastros as Person[]) || []).map(item => ({
+            ...blank,
+            marked: false,
+            ...item,
+            indication: formatIndication(item.indication)
+        }));
         setRecords(baseList);
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(baseList));
@@ -238,13 +249,19 @@ export default function App() {
     }, []);
 
     const uniqueIndications = useMemo(() => {
-        const set = new Set<string>();
+        const map = new Map<string, string>();
         records.forEach(r => {
-            const ind = (r.indication || '').trim();
-            if (ind) set.add(ind);
+            const raw = (r.indication || '').trim();
+            if (raw) {
+                const formatted = formatIndication(raw);
+                const lowerKey = formatted.toLowerCase();
+                if (!map.has(lowerKey)) {
+                    map.set(lowerKey, formatted);
+                }
+            }
         });
         const c = new Intl.Collator('pt-BR', { sensitivity: 'base' });
-        return Array.from(set).sort((a, b) => c.compare(a, b));
+        return Array.from(map.values()).sort((a, b) => c.compare(a, b));
     }, [records]);
 
     const hasUnassigned = useMemo(() => records.some(r => !(r.indication || '').trim()), [records]);

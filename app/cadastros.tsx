@@ -8,7 +8,7 @@ import {Label} from '@/components/ui/label';
 import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue} from '@/components/ui/select';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {Table,TableBody,TableCell,TableHead,TableHeader,TableRow} from '@/components/ui/table';
-import {blank,fields,mask,shown,states,validate,sortRecords,extractImportRecords,normalizeImportRecord,recordIdentity,type Field,type Person,type RecordData,type SortKey} from '@/lib/records';
+import {blank,fields,mask,shown,states,validate,formatIndication,sortRecords,extractImportRecords,normalizeImportRecord,recordIdentity,type Field,type Person,type RecordData,type SortKey} from '@/lib/records';
 const labels:Record<Field,string>={name:'Nome completo',title:'Título de eleitor',zone:'Zona',section:'Seção',birth:'Nascimento',city:'Município do título',uf:'UF do título',address:'Endereço',cpf:'CPF',phone:'Celular',place:'Local de votação',indication:'Indicação'};
 const orderLabels:Record<SortKey,string>={name:'Nome',title:'Número do título',zone:'Zona',section:'Seção',indication:'Indicação',marked:'Marcados'};
 const slots=[93.63,221.87,351.54,483.18,619.50];
@@ -31,8 +31,8 @@ export default function Cadastros() {
   document.addEventListener('mousedown',onClickOutsideFilter);return()=>document.removeEventListener('mousedown',onClickOutsideFilter);
  },[]);
  const uniqueIndications=useMemo(()=>{
-  const s=new Set<string>();records.forEach(r=>{const ind=(r.indication||'').trim();if(ind)s.add(ind);});
-  const c=new Intl.Collator('pt-BR',{sensitivity:'base'});return Array.from(s).sort((a,b)=>c.compare(a,b));
+  const map=new Map<string,string>();records.forEach(r=>{const raw=(r.indication||'').trim();if(raw){const f=formatIndication(raw);const l=f.toLowerCase();if(!map.has(l))map.set(l,f);}});
+  const c=new Intl.Collator('pt-BR',{sensitivity:'base'});return Array.from(map.values()).sort((a,b)=>c.compare(a,b));
  },[records]);
  const hasUnassigned=useMemo(()=>records.some(r=>!(r.indication||'').trim()),[records]);
  const indicationFilterItems=useMemo(()=>{
