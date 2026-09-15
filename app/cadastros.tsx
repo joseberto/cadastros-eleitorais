@@ -1,6 +1,6 @@
 'use client';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {Plus,Printer,ArrowDownAZ,ArrowUpAZ,UsersRound,Pencil,RefreshCw,ArrowLeft,FileText,ShieldCheck,X,Upload,FileJson,AlertTriangle,CheckCircle2,Check,CheckCheck,Trash2} from 'lucide-react';
+import {Plus,Printer,ArrowDownAZ,ArrowUpAZ,UsersRound,Pencil,RefreshCw,ArrowLeft,FileText,ShieldCheck,X,Upload,FileJson,AlertTriangle,CheckCircle2,Check,CheckCheck,Trash2,Download,ChevronDown,Filter,SlidersHorizontal} from 'lucide-react';
 import {Card} from './report-card';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
@@ -36,6 +36,19 @@ export default function Cadastros() {
   setNotice(`${records.length} cadastro(s) ${mark ? 'marcados' : 'desmarcados'}.`);
  }, [records.length]);
 
+ const [optionsMenuOpen,setOptionsMenuOpen]=useState(false);
+ const optionsMenuRef=useRef<HTMLDivElement>(null);
+ useEffect(()=>{
+  const onClickOutside=(e:MouseEvent)=>{if(optionsMenuRef.current&&!optionsMenuRef.current.contains(e.target as Node))setOptionsMenuOpen(false);};
+  document.addEventListener('mousedown',onClickOutside);return()=>document.removeEventListener('mousedown',onClickOutside);
+ },[]);
+ const exportData=useCallback((data:Person[],suffix:string,label:string)=>{
+  if(!data.length){setNotice(`Nenhum cadastro para exportar (${label}).`);return;}
+  const jsonStr=JSON.stringify(data,null,2);const blob=new Blob([jsonStr],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');const d=new Date().toISOString().slice(0,10);a.href=url;a.download=`cadastros-${suffix}-${d}.json`;a.click();URL.revokeObjectURL(url);setNotice(`${data.length} cadastro(s) exportado(s) com sucesso (${label}).`);
+ },[]);
+ const exportAll=useCallback(()=>exportData(records,'todos','Todos os cadastros'),[exportData,records]);
+ const exportMarked=useCallback(()=>{const m=records.filter(r=>r.marked);if(!m.length){setNotice('Nenhum cadastro marcado para exportar.');return;}exportData(m,'marcados','Cadastros marcados');},[exportData,records]);
+ const exportFiltered=useCallback(()=>exportData(sorted,'filtro','Cadastros da lista'),[exportData,sorted]);
  async function save(e:React.FormEvent){e.preventDefault();setFormError('');let data;try{data=validate(draft);}catch(e){setFormError((e as Error).message);return;}setSaving(true);
   try{const r=await fetch('/api/records',{method:editing?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...data,id:id.current,revision:editing?.revision,marked:draftMarked})});const j=await r.json() as {error?:string;record:Person};if(!r.ok)throw new Error(j.error);setRecords(old=>[...old.filter(x=>x.id!==j.record.id),{...j.record,marked:draftMarked}]);setOpen(false);setNotice(editing?'Cadastro atualizado.':'Cadastro salvo.');}
   catch(e){setFormError(e instanceof Error?e.message:'Não foi possível salvar. Tente novamente.');}finally{setSaving(false);}
@@ -71,7 +84,7 @@ export default function Cadastros() {
  return <>
   <div className={'app-shell '+(printMode?'hide-on-print':'')} hidden={printMode}>
    <header className="topbar"><div className="brand"><span className="brand-icon"><FileText size={23}/></span><span>Fichas<span className="brand-light"> / Cadastros eleitorais</span></span></div><span className="private-label"><ShieldCheck size={16}/> Acesso privado</span></header>
-   <main className="workspace"><div className="page-heading"><div><p className="eyebrow">CADASTROS</p><h1>Seus cadastros, organizados.</h1><p className="subheading">Consulte, atualize, importe e imprima suas fichas individuais.</p></div><div className="heading-actions"><input ref={importInput} type="file" accept=".json,application/json" hidden onChange={e=>void chooseImport(e.target.files?.[0])}/><Button size="lg" variant="outline" onClick={()=>importInput.current?.click()}><Upload/> Importar JSON</Button><Button size="lg" onClick={()=>start()}><Plus/> Novo cadastro</Button></div></div>
+   <main className="workspace"><div className="page-heading"><div><p className="eyebrow">CADASTROS</p><h1>Seus cadastros, organizados.</h1><p className="subheading">Consulte, atualize, importe e imprima suas fichas individuais.</p></div><div className="heading-actions"><input ref={importInput} type="file" accept=".json,application/json" hidden onChange={e=>void chooseImport(e.target.files?.[0])}/><div ref={optionsMenuRef} className="options-dropdown-container" onMouseEnter={()=>setOptionsMenuOpen(true)} onMouseLeave={()=>setOptionsMenuOpen(false)}><Button size="lg" variant="outline" onClick={()=>setOptionsMenuOpen(p=>!p)} aria-expanded={optionsMenuOpen} style={{display:'inline-flex',alignItems:'center',gap:'8px'}}><SlidersHorizontal size={17}/><span>Opções</span><ChevronDown size={15} style={{transform:optionsMenuOpen?'rotate(180deg)':'none',transition:'transform 0.2s ease'}} /></Button>{optionsMenuOpen&&(<div className="options-dropdown-menu" role="menu"><button type="button" className="options-dropdown-item" role="menuitem" onClick={()=>{setOptionsMenuOpen(false);importInput.current?.click();}}><Upload size={16} color="#127c80"/><span>Importar JSON</span></button><div className="options-dropdown-divider"/><button type="button" className="options-dropdown-item" role="menuitem" onClick={()=>{setOptionsMenuOpen(false);exportAll();}}><Download size={16} color="#127c80"/><span>Exportar todos ({records.length})</span></button><button type="button" className="options-dropdown-item" role="menuitem" onClick={()=>{setOptionsMenuOpen(false);exportMarked();}}><CheckCircle2 size={16} color="#059669"/><span>Exportar somente os marcados ({records.filter(r=>r.marked).length})</span></button><button type="button" className="options-dropdown-item" role="menuitem" onClick={()=>{setOptionsMenuOpen(false);exportFiltered();}}><Filter size={16} color="#0284c7"/><span>Exportar somente o filtro ({sorted.length})</span></button></div>)}</div><Button size="lg" onClick={()=>start()}><Plus/> Novo cadastro</Button></div></div>
     <section className="listing"><div className="list-toolbar"><div className="list-title"><UsersRound size={21}/><h2>Lista de cadastros</h2><span className="counter">{records.length}</span></div><div className="tools"><Button variant="ghost" size="icon" title="Atualizar lista" aria-label="Atualizar lista" disabled={loading} onClick={()=>void load()}><RefreshCw className={loading?'spin':''}/></Button><Button variant="outline" disabled={!records.length||loading||!!error} onClick={()=>setPrintMode(true)}><Printer/> Imprimir fichas</Button></div></div>
      <div className="sortbar"><span>Ordenar por</span><Select value={sort} onValueChange={v=>setSort(v as SortKey)}><SelectTrigger aria-label="Ordenar por" className="sort-select"><SelectValue/></SelectTrigger><SelectContent>{Object.entries(orderLabels).map(([k,v])=><SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent></Select><Button variant="ghost" size="icon" aria-label={desc?'Usar ordem crescente':'Usar ordem decrescente'} title={desc?'Ordem decrescente':'Ordem crescente'} onClick={()=>setDesc(!desc)}>{desc?<ArrowUpAZ/>:<ArrowDownAZ/>}</Button><span className="sort-summary">{desc?'Ordem decrescente':'Ordem crescente'}</span>
       {records.length > 0 && (

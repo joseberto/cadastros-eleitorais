@@ -21,10 +21,14 @@ import {
   Circle,
   Search,
   RotateCcw,
+  ChevronDown,
+  Filter,
+  Database,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  SlidersHorizontal
 } from 'lucide-react';
 import { Card } from '@/app/report-card';
 import { Button } from '@/components/ui/button';
@@ -123,8 +127,24 @@ export default function App() {
   const [importName, setImportName] = useState('');
   const [importError, setImportError] = useState('');
 
+  const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
+  const optionsMenuRef = useRef<HTMLDivElement>(null);
+
   const measure = useRef<HTMLDivElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
+
+  // Fechar menu de opções ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (optionsMenuRef.current && !optionsMenuRef.current.contains(event.target as Node)) {
+        setOptionsMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Carregar registros do LocalStorage ou do cadastros.json inicial
   useEffect(() => {
@@ -293,18 +313,48 @@ export default function App() {
     setDeleteConfirmId(null);
   }
 
-  function exportBackup() {
-    const jsonStr = JSON.stringify(records, null, 2);
+  const exportData = useCallback((dataToExport: Person[], filenameSuffix: string, label: string) => {
+    if (!dataToExport.length) {
+      setNotice(`Nenhum cadastro para exportar (${label}).`);
+      return;
+    }
+    const jsonStr = JSON.stringify(dataToExport, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const dateStr = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `cadastros-backup-${dateStr}.json`;
+    a.download = `cadastros-${filenameSuffix}-${dateStr}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    setNotice(`Backup baixado com sucesso (${records.length} cadastros).`);
-  }
+    setNotice(`${dataToExport.length} cadastro(s) exportado(s) com sucesso (${label}).`);
+  }, []);
+
+  const exportAll = useCallback(() => {
+    exportData(records, 'todos', 'Todos os cadastros');
+  }, [exportData, records]);
+
+  const exportMarked = useCallback(() => {
+    const markedRecords = records.filter(r => r.marked);
+    if (!markedRecords.length) {
+      setNotice('Nenhum cadastro marcado para exportar.');
+      return;
+    }
+    exportData(markedRecords, 'marcados', 'Cadastros marcados');
+  }, [exportData, records]);
+
+  const exportFiltered = useCallback(() => {
+    if (!filteredRecords.length) {
+      setNotice('Nenhum cadastro no filtro atual para exportar.');
+      return;
+    }
+    const suffix = selectedIndication !== 'all' && selectedIndication !== 'none'
+      ? `filtro-${selectedIndication.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+      : selectedIndication === 'none'
+      ? 'filtro-sem_indicacao'
+      : 'filtrados';
+    exportData(filteredRecords, suffix, 'Filtro atual');
+  }, [exportData, filteredRecords, selectedIndication]);
 
   function resetToDefault() {
     if (window.confirm('Deseja restaurar a lista original de cadastros? Alterações não exportadas serão sobrescritas.')) {
@@ -477,12 +527,89 @@ export default function App() {
                 hidden
                 onChange={e => void chooseImport(e.target.files?.[0])}
               />
-              <Button size="lg" variant="outline" onClick={() => importInput.current?.click()}>
-                <Upload size={17} /> Importar JSON
-              </Button>
-              <Button size="lg" variant="outline" onClick={exportBackup} title="Baixar arquivo JSON com todos os cadastros">
-                <Download size={17} /> Exportar Backup
-              </Button>
+              <div
+                ref={optionsMenuRef}
+                className="options-dropdown-container"
+                onMouseEnter={() => setOptionsMenuOpen(true)}
+                onMouseLeave={() => setOptionsMenuOpen(false)}
+              >
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setOptionsMenuOpen(prev => !prev)}
+                  aria-expanded={optionsMenuOpen}
+                  aria-haspopup="true"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <SlidersHorizontal size={17} />
+                  <span>Opções</span>
+                  <ChevronDown
+                    size={15}
+                    style={{
+                      transform: optionsMenuOpen ? 'rotate(180deg)' : 'none',
+                      transition: 'transform 0.2s ease'
+                    }}
+                  />
+                </Button>
+
+                {optionsMenuOpen && (
+                  <div className="options-dropdown-menu" role="menu">
+                    <button
+                      type="button"
+                      className="options-dropdown-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setOptionsMenuOpen(false);
+                        importInput.current?.click();
+                      }}
+                    >
+                      <Upload size={16} color="#127c80" />
+                      <span>Importar JSON</span>
+                    </button>
+
+                    <div className="options-dropdown-divider" />
+
+                    <button
+                      type="button"
+                      className="options-dropdown-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setOptionsMenuOpen(false);
+                        exportAll();
+                      }}
+                    >
+                      <Download size={16} color="#127c80" />
+                      <span>Exportar todos ({records.length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="options-dropdown-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setOptionsMenuOpen(false);
+                        exportMarked();
+                      }}
+                    >
+                      <CheckCircle2 size={16} color="#059669" />
+                      <span>Exportar somente os marcados ({records.filter(r => r.marked).length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="options-dropdown-item"
+                      role="menuitem"
+                      onClick={() => {
+                        setOptionsMenuOpen(false);
+                        exportFiltered();
+                      }}
+                    >
+                      <Filter size={16} color="#0284c7" />
+                      <span>Exportar somente o filtro ({filteredRecords.length})</span>
+                    </button>
+                  </div>
+                )}
+              </div>
               <Button size="lg" onClick={() => start()}>
                 <Plus size={18} /> Novo cadastro
               </Button>
