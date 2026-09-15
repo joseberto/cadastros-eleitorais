@@ -19,6 +19,9 @@ node_modules
 dist
 dist/
 /dist/
+.vite
+.vite/
+/.vite/
 
 # misc
 .DS_Store
