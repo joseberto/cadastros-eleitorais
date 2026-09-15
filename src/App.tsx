@@ -129,6 +129,24 @@ export default function App() {
 
     const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
     const optionsMenuRef = useRef<HTMLDivElement>(null);
+    const optionsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const handleMouseEnterOptions = useCallback(() => {
+        if (optionsTimeoutRef.current) {
+            clearTimeout(optionsTimeoutRef.current);
+            optionsTimeoutRef.current = null;
+        }
+        setOptionsMenuOpen(true);
+    }, []);
+
+    const handleMouseLeaveOptions = useCallback(() => {
+        if (optionsTimeoutRef.current) {
+            clearTimeout(optionsTimeoutRef.current);
+        }
+        optionsTimeoutRef.current = setTimeout(() => {
+            setOptionsMenuOpen(false);
+        }, 220);
+    }, []);
 
     const measure = useRef<HTMLDivElement>(null);
     const importInput = useRef<HTMLInputElement>(null);
@@ -623,8 +641,8 @@ export default function App() {
                             <div
                                 ref={optionsMenuRef}
                                 className="options-dropdown-container"
-                                onMouseEnter={() => setOptionsMenuOpen(true)}
-                                onMouseLeave={() => setOptionsMenuOpen(false)}
+                                onMouseEnter={handleMouseEnterOptions}
+                                onMouseLeave={handleMouseLeaveOptions}
                             >
                                 <Button
                                     size="lg"
