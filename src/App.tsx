@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Check,
   CheckCheck,
+  Circle,
   Search,
   RotateCcw,
   ChevronLeft,
@@ -111,6 +112,7 @@ export default function App() {
   const [editing, setEditing] = useState<Person | null>(null);
   const [formError, setFormError] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [unmarkTarget, setUnmarkTarget] = useState<{ id?: string; name?: string; count?: number } | null>(null);
 
   const [printMode, setPrintMode] = useState(false);
   const [pages, setPages] = useState<PrintItem[][]>([]);
@@ -167,6 +169,15 @@ export default function App() {
       old.map(x => (x.id === id ? { ...x, marked: !x.marked, updated: new Date().toISOString() } : x))
     );
   }, [updateRecords]);
+
+  // Manipular clique de marcar/desmarcar individual com confirmação para desmarcar
+  const handleToggleMark = useCallback((p: Person) => {
+    if (p.marked) {
+      setUnmarkTarget({ id: p.id, name: p.name });
+    } else {
+      toggleMarkPerson(p.id);
+    }
+  }, [toggleMarkPerson]);
 
   const [selectedIndication, setSelectedIndication] = useState<string>('all');
 
@@ -574,36 +585,40 @@ export default function App() {
 
                 {/* Botões para Marcar e Desmarcar registros filtrados */}
                 {filteredRecords.length > 0 && (
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => markFilteredRecords(true)}
-                      style={{
-                        height: '32px',
-                        fontSize: '12px',
-                        padding: '0 10px',
-                        color: '#0f766e',
-                        borderColor: '#99f6e4',
-                        backgroundColor: '#f0fdfa',
-                        fontWeight: 600
-                      }}
-                      title={`Marcar todos os ${filteredRecords.length} cadastros filtrados`}
-                    >
-                      <CheckCheck size={15} style={{ marginRight: '4px' }} /> Marcar
-                    </Button>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    {/* Botão Marcar: só aparece se houver pelo menos um registro NÃO marcado */}
+                    {filteredRecords.some(r => !r.marked) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => markFilteredRecords(true)}
+                        style={{
+                          height: '32px',
+                          fontSize: '12px',
+                          padding: '0 10px',
+                          color: '#0f766e',
+                          borderColor: '#99f6e4',
+                          backgroundColor: '#f0fdfa',
+                          fontWeight: 600
+                        }}
+                        title={`Marcar cadastros filtrados`}
+                      >
+                        <CheckCheck size={15} style={{ marginRight: '4px' }} /> Marcar
+                      </Button>
+                    )}
+                    {/* Botão Desmarcar: só aparece se houver registros marcados */}
                     {filteredRecords.some(r => r.marked) && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => markFilteredRecords(false)}
+                        onClick={() => setUnmarkTarget({ count: filteredRecords.filter(r => r.marked).length })}
                         style={{
                           height: '32px',
                           fontSize: '12px',
                           padding: '0 8px',
                           color: '#64748b'
                         }}
-                        title={`Desmarcar todos os ${filteredRecords.length} cadastros filtrados`}
+                        title={`Desmarcar cadastros filtrados`}
                       >
                         Desmarcar
                       </Button>
@@ -638,23 +653,6 @@ export default function App() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="number-col">Nº</TableHead>
-                  <TableHead style={{ width: '80px', textAlign: 'center' }}>
-                    <button
-                      className="column-sort"
-                      style={{ justifyContent: 'center', width: '100%' }}
-                      onClick={() => {
-                        if (sort === 'marked') setDesc(!desc);
-                        else {
-                          setSort('marked');
-                          setDesc(false);
-                        }
-                      }}
-                      title="Ordenar por cadastros marcados"
-                    >
-                      Marcado
-                      {sort === 'marked' && <span>{desc ? '↓' : '↑'}</span>}
-                    </button>
-                  </TableHead>
                   {(['name', 'title', 'zone', 'section'] as SortKey[]).map(k => (
                     <TableHead key={k} aria-sort={sort === k ? (desc ? 'descending' : 'ascending') : 'none'}>
                       <button
@@ -688,7 +686,9 @@ export default function App() {
                       {sort === 'indication' && <span>{desc ? '↓' : '↑'}</span>}
                     </button>
                   </TableHead>
-                  <TableHead className="action-col" style={{ width: '115px' }}>Ações</TableHead>
+                  <TableHead className="action-col" style={{ width: '130px', textAlign: 'center' }}>
+                    Ações
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -697,31 +697,6 @@ export default function App() {
                   return (
                     <TableRow key={p.id}>
                       <TableCell className="row-number">{String(rowNumber).padStart(2, '0')}</TableCell>
-                      <TableCell style={{ textAlign: 'center', padding: '8px 4px' }}>
-                        <button
-                          type="button"
-                          onClick={() => toggleMarkPerson(p.id)}
-                          aria-label={p.marked ? `Marcado (${p.name}) - clique para desmarcar` : `Não marcado (${p.name}) - clique para marcar`}
-                          title={p.marked ? 'Marcado - clique para alternar' : 'Não marcado - clique para alternar'}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '6px',
-                            backgroundColor: p.marked ? '#ecfdf5' : '#f8fafc',
-                            color: p.marked ? '#059669' : '#94a3b8',
-                            border: `1px solid ${p.marked ? '#a7f3d0' : '#e2e8f0'}`,
-                            cursor: 'pointer',
-                            fontWeight: 700,
-                            fontSize: '14px',
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
-                          {p.marked ? <Check size={17} strokeWidth={3} /> : <X size={15} strokeWidth={2.5} />}
-                        </button>
-                      </TableCell>
                       <TableCell className={'person-name ' + (!p.name ? 'missing' : '')}>{shown(p.name)}</TableCell>
                       <TableCell className={'mono ' + (!p.title ? 'missing' : '')}>{shown(p.title)}</TableCell>
                       <TableCell>
@@ -730,25 +705,26 @@ export default function App() {
                       <TableCell className="mono">{p.section}</TableCell>
                       <TableCell className={!p.phone ? 'missing' : 'mono'}>{shown(p.phone)}</TableCell>
                       <TableCell className={!p.indication ? 'missing' : ''}>{shown(p.indication)}</TableCell>
-                      <TableCell>
-                        <div style={{ display: 'flex', gap: '4px' }}>
+                      <TableCell style={{ textAlign: 'center' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                           <Button
                             variant="ghost"
                             size="icon"
                             aria-label={(p.marked ? 'Desmarcar ' : 'Marcar ') + shown(p.name)}
                             title={p.marked ? 'Marcado (clique para desmarcar)' : 'Não marcado (clique para marcar)'}
-                            onClick={() => toggleMarkPerson(p.id)}
-                            style={{ color: p.marked ? '#059669' : '#64748b' }}
+                            onClick={() => handleToggleMark(p)}
+                            style={{ color: p.marked ? '#059669' : '#94a3b8' }}
                           >
-                            {p.marked ? <CheckCircle2 size={16} /> : <Check size={16} />}
+                            {p.marked ? <CheckCircle2 size={17} /> : <Circle size={17} />}
                           </Button>
-                          <Button variant="ghost" size="icon" aria-label={'Editar ' + shown(p.name)} onClick={() => start(p)}>
+                          <Button variant="ghost" size="icon" aria-label={'Editar ' + shown(p.name)} title="Editar cadastro" onClick={() => start(p)}>
                             <Pencil size={15} />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
                             aria-label={'Excluir ' + shown(p.name)}
+                            title="Excluir cadastro"
                             style={{ color: '#c53030' }}
                             onClick={() => setDeleteConfirmId(p.id)}
                           >
@@ -1007,6 +983,45 @@ export default function App() {
               onClick={() => deleteConfirmId && removePerson(deleteConfirmId)}
             >
               Excluir
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Confirmação de Desmarcação */}
+      <Dialog open={!!unmarkTarget} onOpenChange={v => !v && setUnmarkTarget(null)}>
+        <DialogContent style={{ maxWidth: '420px', padding: '24px' }}>
+          <DialogHeader>
+            <DialogTitle>Confirmar Desmarcação</DialogTitle>
+            <DialogDescription>
+              {unmarkTarget?.name ? (
+                <>
+                  Deseja realmente desmarcar o cadastro de <strong>{unmarkTarget.name}</strong>?
+                </>
+              ) : (
+                <>
+                  Deseja realmente desmarcar <strong>{unmarkTarget?.count}</strong> cadastro(s) filtrado(s)?
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+            <Button variant="outline" onClick={() => setUnmarkTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="default"
+              style={{ backgroundColor: '#0f766e', color: '#fff' }}
+              onClick={() => {
+                if (unmarkTarget?.id) {
+                  toggleMarkPerson(unmarkTarget.id);
+                } else if (unmarkTarget?.count) {
+                  markFilteredRecords(false);
+                }
+                setUnmarkTarget(null);
+              }}
+            >
+              Confirmar e Desmarcar
             </Button>
           </div>
         </DialogContent>

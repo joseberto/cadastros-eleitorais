@@ -1,6 +1,5 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # dependencies
+node_modules
 /node_modules
 /.pnp
 .pnp.*
@@ -13,10 +12,13 @@
 # testing
 /coverage
 
-# next.js
+# next.js / vite
 /.next/
 /.vinext/
 /out/
+dist
+dist/
+/dist/
 
 # misc
 .DS_Store
@@ -28,22 +30,31 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
 
-# vercel
+# vercel & wrangler
 .vercel
+.wrangler
+/.wrangler/
 
 # typescript
 next-env.d.ts
-/dist/
-/.wrangler/
-# Checkout-local execution profile and tool state; never publish them.
+*.tsbuildinfo
+
+# temporary runtime directories
+.sites-runtime
+.sites-runtime/
 /.sites-runtime/
-/.agents/
-/.codex/
+.openai
+.openai/
 /.openai/
+.agents/
+/.agents/
+.codex/
+/.codex/
+outputs/
 /outputs/
+work/
 /work/
 
-*.tsbuildinfo
