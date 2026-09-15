@@ -152,7 +152,7 @@ export function sortRecords(records: Person[], key: SortKey, descending = false)
 export function isDeiaIndication(indication?: string | null): boolean {
     if (!indication) return false;
     const clean = indication.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    return clean === 'deia' || clean.startsWith('deia');
+    return clean.includes('deia');
 }
 
 export function shownClean(v?: string | null): string {
