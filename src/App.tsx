@@ -30,7 +30,7 @@ import {
     ChevronsRight,
     SlidersHorizontal
 } from 'lucide-react';
-import { Card } from '@/app/report-card';
+import { Card, DeiaCard } from '@/app/report-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -68,6 +68,7 @@ import {
     extractImportRecords,
     normalizeImportRecord,
     recordIdentity,
+    isDeiaIndication,
     type Field,
     type Person,
     type RecordData,
@@ -561,6 +562,8 @@ export default function App() {
         setImportRows([]);
     }
 
+    const isDeia = useMemo(() => isDeiaIndication(selectedIndication), [selectedIndication]);
+
     useEffect(() => {
         if (!printMode) return;
         let active = true;
@@ -570,27 +573,50 @@ export default function App() {
             const elements = Array.from(measure.current.children) as HTMLElement[];
             const out: PrintItem[][] = [];
             let page: PrintItem[] = [];
-            let next = slots[0];
-            elements.forEach((el, i) => {
-                const height = el.getBoundingClientRect().height * 0.75;
-                let top = Math.max(slots[page.length] ?? next, next);
-                if (page.length >= 5 || top + height > 800) {
-                    out.push(page);
-                    page = [];
-                    next = slots[0];
-                    top = next;
-                }
-                page.push({ person: sorted[i], number: i + 1, top });
-                next = top + height + 20;
-            });
-            if (page.length) out.push(page);
+
+            if (isDeia) {
+                // Modo Deia: fichas compactas estilo formulário físico, margem superior de 20pt, limite seguro de 810pt
+                const startTop = 20;
+                const pageMaxHeight = 810;
+                const gap = 5;
+                let currentTop = startTop;
+
+                elements.forEach((el, i) => {
+                    const height = el.getBoundingClientRect().height * 0.75;
+                    if (page.length > 0 && (currentTop + height > pageMaxHeight || page.length >= 10)) {
+                        out.push(page);
+                        page = [];
+                        currentTop = startTop;
+                    }
+                    page.push({ person: sorted[i], number: i + 1, top: currentTop });
+                    currentTop += height + gap;
+                });
+                if (page.length) out.push(page);
+            } else {
+                // Modo Padrão: slots originais e limite de 5 por página
+                let next = slots[0];
+                elements.forEach((el, i) => {
+                    const height = el.getBoundingClientRect().height * 0.75;
+                    let top = Math.max(slots[page.length] ?? next, next);
+                    if (page.length >= 5 || top + height > 800) {
+                        out.push(page);
+                        page = [];
+                        next = slots[0];
+                        top = next;
+                    }
+                    page.push({ person: sorted[i], number: i + 1, top });
+                    next = top + height + 20;
+                });
+                if (page.length) out.push(page);
+            }
+
             setPages(out);
             setPrintReady(true);
         });
         return () => {
             active = false;
         };
-    }, [printMode, sorted]);
+    }, [printMode, sorted, isDeia]);
 
     const input = (k: Field, span = '') => (
         <div className={'field ' + span} key={k}>
@@ -1559,7 +1585,7 @@ export default function App() {
                             <ArrowLeft /> Voltar à lista
                         </Button>
                         <div>
-                            <strong>Prévia de impressão</strong>
+                            <strong>Prévia de impressão {isDeia ? '· Modelo Deia' : ''}</strong>
                             <span>
                                 {sorted.length} fichas · {pages.length} páginas · {orderLabels[sort]}
                                 {selectedIndication !== 'all' ? ` · Indicação: ${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}` : ''}
@@ -1574,23 +1600,35 @@ export default function App() {
                     </p>
                     <div className="print-measure" ref={measure} aria-hidden="true">
                         {sorted.map((p, i) => (
-                            <Card key={p.id} person={p} number={i + 1} />
+                            isDeia ? (
+                                <DeiaCard key={p.id} person={p} number={i + 1} />
+                            ) : (
+                                <Card key={p.id} person={p} number={i + 1} />
+                            )
                         ))}
                     </div>
                     <div className="pages">
                         {pages.map((items, i) => (
-                            <section className="paper" key={i} aria-label={'Página ' + (i + 1)}>
-                                <div className="paper-stripe" />
-                                <header className="paper-header">
-                                    <h1>Levantamento de títulos eleitorais</h1>
-                                    <p>Fichas individuais</p>
-                                </header>
+                            <section className={`paper ${isDeia ? 'paper-deia' : ''}`} key={i} aria-label={'Página ' + (i + 1)}>
+                                {!isDeia && (
+                                    <>
+                                        <div className="paper-stripe" />
+                                        <header className="paper-header">
+                                            <h1>Levantamento de títulos eleitorais</h1>
+                                            <p>Fichas individuais</p>
+                                        </header>
+                                    </>
+                                )}
                                 {items.map(item => (
                                     <div className="positioned-card" key={item.person.id} style={{ top: item.top + 'pt' }}>
-                                        <Card person={item.person} number={item.number} />
+                                        {isDeia ? (
+                                            <DeiaCard person={item.person} number={item.number} />
+                                        ) : (
+                                            <Card person={item.person} number={item.number} />
+                                        )}
                                     </div>
                                 ))}
-                                <div className="paper-footer" />
+                                {!isDeia && <div className="paper-footer" />}
                             </section>
                         ))}
                     </div>

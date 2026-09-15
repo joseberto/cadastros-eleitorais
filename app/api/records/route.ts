@@ -1,4 +1,4 @@
-import { getChatGPTUser } from '../../../chatgpt-auth';
+import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { database } from '@/lib/database';
 import { extractImportRecords, fields, normalizeImportRecord, recordIdentity, validate, type Person } from '@/lib/records';
 

@@ -148,3 +148,62 @@ export function sortRecords(records: Person[], key: SortKey, descending = false)
         return (cmp || c.compare(a.name, b.name) || a.id.localeCompare(b.id)) * (descending ? -1 : 1);
     });
 }
+
+export function isDeiaIndication(indication?: string | null): boolean {
+    if (!indication) return false;
+    const clean = indication.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return clean === 'deia' || clean.startsWith('deia');
+}
+
+export function shownClean(v?: string | null): string {
+    if (!v || typeof v !== 'string') return '';
+    const trimmed = v.trim();
+    if (/^(nao informado|não informado|n\/a|null|undefined|-|—)$/i.test(trimmed)) return '';
+    return trimmed;
+}
+
+export function parseAddress(rawAddress?: string | null): { street: string; neighborhood: string } {
+    if (!rawAddress || typeof rawAddress !== 'string') {
+        return { street: '', neighborhood: '' };
+    }
+    const trimmed = rawAddress.trim();
+    if (!trimmed) return { street: '', neighborhood: '' };
+
+    // 1. Caso com hífen explícito: "Rua X, 123 - Bairro" ou "Rua X, 123 – Bairro"
+    const dashSeparators = [' - ', ' – ', ' — '];
+    for (const sep of dashSeparators) {
+        const lastIdx = trimmed.lastIndexOf(sep);
+        if (lastIdx !== -1) {
+            const street = trimmed.slice(0, lastIdx).trim();
+            const neighborhood = trimmed.slice(lastIdx + sep.length).trim();
+            if (street && neighborhood) {
+                return { street, neighborhood };
+            }
+        }
+    }
+
+    // 2. Caso com palavra "bairro" explícita: "Rua X, 123, Bairro Y" ou "Rua X, nº 123, bairro Y"
+    const bairroMatch = trimmed.match(/^(.*?)[,\s]+(?:bairro|b\.)\s+(.+)$/i);
+    if (bairroMatch) {
+        return {
+            street: bairroMatch[1].trim().replace(/,\s*$/, ''),
+            neighborhood: bairroMatch[2].trim()
+        };
+    }
+
+    // 3. Caso com vírgulas separando: ex "Rua Jardim Silveira, 756, Novo Mondubim"
+    const commaParts = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+    if (commaParts.length >= 3) {
+        const neighborhood = commaParts[commaParts.length - 1];
+        const street = commaParts.slice(0, commaParts.length - 1).join(', ');
+        return { street, neighborhood };
+    } else if (commaParts.length === 2) {
+        const second = commaParts[1];
+        // Se a segunda parte não for número puro (ex: não for "nº 123" ou "123")
+        if (!/^\s*(?:nº|n°|n\.|numero|número)?\s*\d+\s*[a-zA-Z]?\s*$/i.test(second)) {
+            return { street: commaParts[0], neighborhood: second };
+        }
+    }
+
+    return { street: trimmed, neighborhood: '' };
+}
