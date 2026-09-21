@@ -1041,24 +1041,29 @@ export default function App() {
                                     variant="outline"
                                     onClick={() => setDuplicatesModalOpen(true)}
                                     style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        height: '36px',
+                                        padding: '0 10px',
                                         borderColor: duplicateGroups.length > 0 ? '#fca5a5' : undefined,
                                         backgroundColor: duplicateGroups.length > 0 ? '#fef2f2' : undefined,
                                         color: duplicateGroups.length > 0 ? '#b91c1c' : undefined
                                     }}
-                                    title="Verificar cadastros duplicados"
+                                    title={`Verificar cadastros duplicados${totalDuplicateRecordsCount > 0 ? ` (${totalDuplicateRecordsCount} duplicados)` : ''}`}
+                                    aria-label="Verificar cadastros duplicados"
                                 >
-                                    <CopyCheck size={16} />
-                                    <span>Verificar duplicados</span>
+                                    <CopyCheck size={17} />
                                     {totalDuplicateRecordsCount > 0 && (
                                         <span
                                             style={{
-                                                marginLeft: '4px',
                                                 padding: '1px 7px',
                                                 borderRadius: '10px',
                                                 fontSize: '11px',
                                                 fontWeight: 700,
                                                 background: '#dc2626',
-                                                color: '#ffffff'
+                                                color: '#ffffff',
+                                                lineHeight: '1.2'
                                             }}
                                         >
                                             {totalDuplicateRecordsCount}
