@@ -28,7 +28,9 @@ import {
     ChevronRight,
     ChevronsLeft,
     ChevronsRight,
-    SlidersHorizontal
+    SlidersHorizontal,
+    MapPin,
+    CopyCheck
 } from 'lucide-react';
 import { Card, DeiaCard } from '@/app/report-card';
 import { Button } from '@/components/ui/button';
@@ -60,6 +62,7 @@ import {
     blank,
     fields,
     mask,
+    digits,
     shown,
     states,
     validate,
@@ -109,6 +112,7 @@ type ImportRow = { index: number; data?: RecordData & { marked?: boolean }; erro
 export default function App() {
     const [records, setRecords] = useState<Person[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
+    const [placeSearch, setPlaceSearch] = useState('');
     const [notice, setNotice] = useState('');
     const [sort, setSort] = useState<SortKey>('name');
     const [desc, setDesc] = useState(false);
@@ -124,6 +128,7 @@ export default function App() {
     const [pages, setPages] = useState<PrintItem[][]>([]);
     const [printReady, setPrintReady] = useState(false);
 
+    const [duplicatesModalOpen, setDuplicatesModalOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [importRows, setImportRows] = useState<ImportRow[]>([]);
     const [importName, setImportName] = useState('');
@@ -331,6 +336,14 @@ export default function App() {
             list = list.filter(p => !p.marked);
         }
 
+        if (placeSearch.trim()) {
+            const placeTerm = placeSearch.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            list = list.filter(p => {
+                const pl = (p.place || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                return pl.includes(placeTerm);
+            });
+        }
+
         if (!searchTerm.trim()) return list;
         const term = searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         return list.filter(p => {
@@ -340,7 +353,7 @@ export default function App() {
                 .replace(/[\u0300-\u036f]/g, '');
             return searchable.includes(term);
         });
-    }, [records, selectedIndication, selectedMarkedFilter, searchTerm]);
+    }, [records, selectedIndication, selectedMarkedFilter, searchTerm, placeSearch]);
 
     const activeFilterLabel = useMemo(() => {
         let name = 'Todas as indicações';
@@ -380,7 +393,7 @@ export default function App() {
     // Retorna à página 1 caso os filtros, ordenação ou tamanho de página mudem
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, selectedIndication, selectedMarkedFilter, sort, desc, pageSize]);
+    }, [searchTerm, placeSearch, selectedIndication, selectedMarkedFilter, sort, desc, pageSize]);
 
     // Garante que a página atual seja válida caso o número total de páginas diminua
     useEffect(() => {
@@ -411,6 +424,43 @@ export default function App() {
         } catch (err) {
             setFormError((err as Error).message);
             return;
+        }
+
+        // Validação de duplicidade por Nome Completo
+        const normName = (validatedData.name || '')
+            .trim()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/\s+/g, ' ');
+        if (normName) {
+            const existingName = records.find(r => {
+                if (editing && r.id === editing.id) return false;
+                const rNorm = (r.name || '')
+                    .trim()
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .toLowerCase()
+                    .replace(/\s+/g, ' ');
+                return rNorm === normName;
+            });
+            if (existingName) {
+                setFormError(`Não foi possível salvar: já existe um cadastro com o nome "${existingName.name}" (Zona ${existingName.zone}, Seção ${existingName.section}).`);
+                return;
+            }
+        }
+
+        // Validação de duplicidade por Título de Eleitor
+        const titleDigits = digits(validatedData.title);
+        if (titleDigits && titleDigits.length === 12) {
+            const existingTitle = records.find(r => {
+                if (editing && r.id === editing.id) return false;
+                return digits(r.title) === titleDigits;
+            });
+            if (existingTitle) {
+                setFormError(`Não foi possível salvar: o título de eleitor já está cadastrado para "${existingTitle.name}" (Zona ${existingTitle.zone}, Seção ${existingTitle.section}).`);
+                return;
+            }
         }
 
         if (editing) {
@@ -618,34 +668,182 @@ export default function App() {
         };
     }, [printMode, sorted, isDeia]);
 
-    const input = (k: Field, span = '') => (
-        <div className={'field ' + span} key={k}>
-            <Label htmlFor={k}>
-                {labels[k]}
-                {(k === 'zone' || k === 'section') && <span className="required"> *</span>}
-            </Label>
-            <Input
-                id={k}
-                value={draft[k]}
-                onChange={e => setDraft({ ...draft, [k]: mask(k, e.target.value) })}
-                required={k === 'zone' || k === 'section'}
-                inputMode={['title', 'zone', 'section', 'birth', 'cpf', 'phone'].includes(k) ? 'numeric' : 'text'}
-                maxLength={k === 'address' ? 400 : k === 'place' ? 300 : k === 'name' ? 160 : k === 'city' ? 120 : 100}
-                placeholder={
-                    ({
-                        title: '0000 0000 0000',
-                        zone: '000',
-                        section: '0000',
-                        birth: 'DD/MM/AAAA',
-                        cpf: '000.000.000-00',
-                        phone: '(00) 00000-0000',
-                        indication: 'Nome de quem indicou / Liderança'
-                    } as Partial<Record<Field, string>>)[k] || 'Não informado'
-                }
-                autoComplete="off"
-            />
-        </div>
-    );
+    const duplicateGroups = useMemo(() => {
+        const nameMap = new Map<string, Person[]>();
+        const titleMap = new Map<string, Person[]>();
+        const cpfMap = new Map<string, Person[]>();
+
+        records.forEach(p => {
+            const normName = (p.name || '')
+                .trim()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/\s+/g, ' ');
+            if (normName) {
+                const list = nameMap.get(normName) || [];
+                list.push(p);
+                nameMap.set(normName, list);
+            }
+
+            const titleDigits = digits(p.title);
+            if (titleDigits.length === 12) {
+                const list = titleMap.get(titleDigits) || [];
+                list.push(p);
+                titleMap.set(titleDigits, list);
+            }
+
+            const cpfDigits = digits(p.cpf);
+            if (cpfDigits.length === 11) {
+                const list = cpfMap.get(cpfDigits) || [];
+                list.push(p);
+                cpfMap.set(cpfDigits, list);
+            }
+        });
+
+        type DuplicateGroup = {
+            id: string;
+            type: 'name' | 'title' | 'cpf';
+            title: string;
+            reason: string;
+            items: Person[];
+        };
+
+        const groups: DuplicateGroup[] = [];
+
+        // Duplicados por nome
+        nameMap.forEach((items, normName) => {
+            if (items.length >= 2) {
+                groups.push({
+                    id: `name-${normName}`,
+                    type: 'name',
+                    title: `Nome duplicado: "${items[0].name}"`,
+                    reason: `${items.length} cadastros com o mesmo nome completo`,
+                    items
+                });
+            }
+        });
+
+        // Duplicados por título
+        titleMap.forEach((items, titleDigits) => {
+            if (items.length >= 2) {
+                groups.push({
+                    id: `title-${titleDigits}`,
+                    type: 'title',
+                    title: `Título duplicado: ${mask('title', titleDigits)}`,
+                    reason: `${items.length} cadastros com o mesmo número de título`,
+                    items
+                });
+            }
+        });
+
+        // Duplicados por CPF
+        cpfMap.forEach((items, cpfDigits) => {
+            if (items.length >= 2) {
+                groups.push({
+                    id: `cpf-${cpfDigits}`,
+                    type: 'cpf',
+                    title: `CPF duplicado: ${mask('cpf', cpfDigits)}`,
+                    reason: `${items.length} cadastros com o mesmo CPF`,
+                    items
+                });
+            }
+        });
+
+        return groups;
+    }, [records]);
+
+    const totalDuplicateRecordsCount = useMemo(() => {
+        const idSet = new Set<string>();
+        duplicateGroups.forEach(g => g.items.forEach(p => idSet.add(p.id)));
+        return idSet.size;
+    }, [duplicateGroups]);
+
+    const duplicateByName = useMemo(() => {
+        if (!open) return undefined;
+        const normName = (draft.name || '')
+            .trim()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/\s+/g, ' ');
+        if (!normName) return undefined;
+        return records.find(r => {
+            if (editing && r.id === editing.id) return false;
+            const rNorm = (r.name || '')
+                .trim()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/\s+/g, ' ');
+            return rNorm === normName;
+        });
+    }, [open, draft.name, records, editing]);
+
+    const duplicateByTitle = useMemo(() => {
+        if (!open) return undefined;
+        const titleDigits = digits(draft.title);
+        if (titleDigits.length !== 12) return undefined;
+        return records.find(r => {
+            if (editing && r.id === editing.id) return false;
+            return digits(r.title) === titleDigits;
+        });
+    }, [open, draft.title, records, editing]);
+
+    const input = (k: Field, span = '') => {
+        const isDuplicateName = k === 'name' && !!duplicateByName;
+        const isDuplicateTitle = k === 'title' && !!duplicateByTitle;
+        const hasDuplicateWarning = isDuplicateName || isDuplicateTitle;
+
+        return (
+            <div className={'field ' + span} key={k}>
+                <Label htmlFor={k}>
+                    {labels[k]}
+                    {(k === 'zone' || k === 'section') && <span className="required"> *</span>}
+                </Label>
+                <Input
+                    id={k}
+                    value={draft[k]}
+                    onChange={e => {
+                        setDraft({ ...draft, [k]: mask(k, e.target.value) });
+                        if (formError) setFormError('');
+                    }}
+                    required={k === 'zone' || k === 'section'}
+                    inputMode={['title', 'zone', 'section', 'birth', 'cpf', 'phone'].includes(k) ? 'numeric' : 'text'}
+                    maxLength={k === 'address' ? 400 : k === 'place' ? 300 : k === 'name' ? 160 : k === 'city' ? 120 : 100}
+                    placeholder={
+                        ({
+                            title: '0000 0000 0000',
+                            zone: '000',
+                            section: '0000',
+                            birth: 'DD/MM/AAAA',
+                            cpf: '000.000.000-00',
+                            phone: '(00) 00000-0000',
+                            indication: 'Nome de quem indicou / Liderança'
+                        } as Partial<Record<Field, string>>)[k] || 'Não informado'
+                    }
+                    autoComplete="off"
+                    style={hasDuplicateWarning ? { borderColor: '#e11d48', backgroundColor: '#fff5f5' } : undefined}
+                />
+                {isDuplicateName && duplicateByName && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '12px', color: '#be123c', marginTop: '3px', lineHeight: 1.4 }}>
+                        <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+                        <span>
+                            Já cadastrado: <strong>{duplicateByName.name}</strong> (Zona {duplicateByName.zone}, Seção {duplicateByName.section}{duplicateByName.indication ? ` · Indicação: ${duplicateByName.indication}` : ''})
+                        </span>
+                    </div>
+                )}
+                {isDuplicateTitle && duplicateByTitle && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '12px', color: '#be123c', marginTop: '3px', lineHeight: 1.4 }}>
+                        <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+                        <span>
+                            Título já pertence a: <strong>{duplicateByTitle.name}</strong> (Zona {duplicateByTitle.zone}, Seção {duplicateByTitle.section})
+                        </span>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     return (
         <>
@@ -777,7 +975,34 @@ export default function App() {
                                 <h2>Lista de cadastros</h2>
                                 <span className="counter">{records.length}</span>
                             </div>
-                            <div className="tools" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <div className="tools" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <div style={{ position: 'relative', width: '220px' }}>
+                                    <Input
+                                        placeholder="Buscar local de votação..."
+                                        value={placeSearch}
+                                        onChange={e => setPlaceSearch(e.target.value)}
+                                        style={{ paddingLeft: '32px', height: '36px', fontSize: '13px' }}
+                                    />
+                                    <MapPin size={15} style={{ position: 'absolute', left: '10px', top: '10px', color: '#8898aa' }} />
+                                    {placeSearch && (
+                                        <button
+                                            onClick={() => setPlaceSearch('')}
+                                            style={{
+                                                position: 'absolute',
+                                                right: '8px',
+                                                top: '8px',
+                                                border: 'none',
+                                                background: 'transparent',
+                                                cursor: 'pointer',
+                                                color: '#8898aa'
+                                            }}
+                                            title="Limpar busca de local de votação"
+                                            aria-label="Limpar busca de local de votação"
+                                        >
+                                            <X size={15} />
+                                        </button>
+                                    )}
+                                </div>
                                 <div style={{ position: 'relative', width: '220px' }}>
                                     <Input
                                         placeholder="Buscar pessoa, título, zona..."
@@ -798,6 +1023,8 @@ export default function App() {
                                                 cursor: 'pointer',
                                                 color: '#8898aa'
                                             }}
+                                            title="Limpar busca geral"
+                                            aria-label="Limpar busca geral"
                                         >
                                             <X size={15} />
                                         </button>
@@ -809,6 +1036,34 @@ export default function App() {
                                     onClick={() => setPrintMode(true)}
                                 >
                                     <Printer size={16} /> Imprimir fichas
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setDuplicatesModalOpen(true)}
+                                    style={{
+                                        borderColor: duplicateGroups.length > 0 ? '#fca5a5' : undefined,
+                                        backgroundColor: duplicateGroups.length > 0 ? '#fef2f2' : undefined,
+                                        color: duplicateGroups.length > 0 ? '#b91c1c' : undefined
+                                    }}
+                                    title="Verificar cadastros duplicados"
+                                >
+                                    <CopyCheck size={16} />
+                                    <span>Verificar duplicados</span>
+                                    {totalDuplicateRecordsCount > 0 && (
+                                        <span
+                                            style={{
+                                                marginLeft: '4px',
+                                                padding: '1px 7px',
+                                                borderRadius: '10px',
+                                                fontSize: '11px',
+                                                fontWeight: 700,
+                                                background: '#dc2626',
+                                                color: '#ffffff'
+                                            }}
+                                        >
+                                            {totalDuplicateRecordsCount}
+                                        </span>
+                                    )}
                                 </Button>
                             </div>
                         </div>
@@ -1127,7 +1382,17 @@ export default function App() {
                                     return (
                                         <TableRow key={p.id}>
                                             <TableCell className="row-number">{String(rowNumber).padStart(2, '0')}</TableCell>
-                                            <TableCell className={'person-name ' + (!p.name ? 'missing' : '')}>{shown(p.name)}</TableCell>
+                                            <TableCell
+                                                className={'person-name ' + (!p.name ? 'missing' : '')}
+                                                title={
+                                                    [
+                                                        p.place ? `Local de votação: ${p.place}` : '',
+                                                        p.address ? `Endereço: ${p.address}` : ''
+                                                    ].filter(Boolean).join(' · ') || undefined
+                                                }
+                                            >
+                                                {shown(p.name)}
+                                            </TableCell>
                                             <TableCell className={'mono ' + (!p.title ? 'missing' : '')}>{shown(p.title)}</TableCell>
                                             <TableCell>
                                                 <span className="zone-badge">{p.zone}</span>
@@ -1259,18 +1524,26 @@ export default function App() {
                                 <h3>
                                     {selectedIndication !== 'all'
                                         ? `Nenhum cadastro encontrado para "${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}"`
-                                        : searchTerm
+                                        : (searchTerm || placeSearch)
                                             ? 'Nenhum resultado encontrado'
                                             : 'Sua lista está vazia'}
                                 </h3>
                                 <p>
-                                    {selectedIndication !== 'all' || searchTerm
-                                        ? 'Tente alterar os filtros ou limpar a pesquisa.'
+                                    {selectedIndication !== 'all' || searchTerm || placeSearch || selectedMarkedFilter !== 'all'
+                                        ? 'Tente alterar os filtros ou limpar as buscas.'
                                         : 'Adicione o primeiro cadastro ou importe um arquivo JSON.'}
                                 </p>
-                                {selectedIndication !== 'all' && (
-                                    <Button variant="outline" onClick={() => { setSelectedIndication('all'); setSearchTerm(''); }}>
-                                        Limpar filtros
+                                {(selectedIndication !== 'all' || searchTerm || placeSearch || selectedMarkedFilter !== 'all') && (
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => {
+                                            setSelectedIndication('all');
+                                            setSelectedMarkedFilter('all');
+                                            setSearchTerm('');
+                                            setPlaceSearch('');
+                                        }}
+                                    >
+                                        Limpar filtros e buscas
                                     </Button>
                                 )}
                                 {!records.length && (
@@ -1285,7 +1558,7 @@ export default function App() {
                             <span>
                                 {records.length} {records.length === 1 ? 'cadastro' : 'cadastros'}
                                 {selectedIndication !== 'all' && ` · Filtrado por: "${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}" (${sorted.length})`}
-                                {searchTerm && ` (${sorted.length} na busca)`}
+                                {(searchTerm || placeSearch) && ` (${sorted.length} na busca)`}
                             </span>
                             <button
                                 onClick={resetToDefault}
@@ -1573,6 +1846,196 @@ export default function App() {
                                 {`Importar ${importRows.filter(r => r.data && !r.duplicate && !r.alreadyMarked).length}`}
                             </Button>
                         </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Modal de Verificação de Duplicados */}
+            <Dialog open={duplicatesModalOpen} onOpenChange={setDuplicatesModalOpen}>
+                <DialogContent className="duplicates-modal" style={{ maxWidth: '980px', width: 'calc(100% - 32px)', maxHeight: '92vh', overflowY: 'auto', padding: '28px' }} showCloseButton={false}>
+                    <DialogHeader>
+                        <div className="modal-heading">
+                            <div>
+                                <DialogTitle style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <CopyCheck size={22} color="#127c80" />
+                                    <span>Verificação de Cadastros Duplicados</span>
+                                </DialogTitle>
+                                <DialogDescription>
+                                    Identifica pessoas cadastradas mais de uma vez com o mesmo Nome Completo, Título de Eleitor ou CPF.
+                                </DialogDescription>
+                            </div>
+                            <Button variant="ghost" size="icon" aria-label="Fechar duplicados" onClick={() => setDuplicatesModalOpen(false)}>
+                                <X />
+                            </Button>
+                        </div>
+                    </DialogHeader>
+
+                    {duplicateGroups.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '40px 20px', background: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0', marginTop: '12px' }}>
+                            <div style={{ display: 'inline-grid', placeItems: 'center', width: '56px', height: '56px', background: '#dcfce7', borderRadius: '50%', color: '#16a34a', marginBottom: '12px' }}>
+                                <CheckCircle2 size={32} />
+                            </div>
+                            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#166534', margin: '0 0 6px' }}>
+                                Nenhum cadastro duplicado encontrado!
+                            </h3>
+                            <p style={{ color: '#15803d', fontSize: '14px', margin: 0 }}>
+                                Todos os {records.length} cadastros na sua base de dados possuem nomes, títulos e CPFs únicos.
+                            </p>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '12px 16px', background: '#fff1f2', borderRadius: '10px', border: '1px solid #fecdd3' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#9f1239', fontSize: '14px', fontWeight: 600 }}>
+                                    <AlertTriangle size={18} color="#e11d48" />
+                                    <span>
+                                        Foram encontrados <strong>{duplicateGroups.length}</strong> grupo(s) de duplicidade totalizando <strong>{totalDuplicateRecordsCount}</strong> cadastros conflitantes.
+                                    </span>
+                                </div>
+                                <span style={{ fontSize: '12px', color: '#be123c' }}>
+                                    Exclua as cópias individualmente pelos botões abaixo
+                                </span>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                {duplicateGroups.map(group => (
+                                    <div
+                                        key={group.id}
+                                        style={{
+                                            border: '1px solid #e2e8f0',
+                                            borderRadius: '10px',
+                                            overflow: 'hidden',
+                                            background: '#ffffff',
+                                            boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                padding: '10px 16px',
+                                                background: '#f8fafc',
+                                                borderBottom: '1px solid #e2e8f0',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                flexWrap: 'wrap',
+                                                gap: '8px'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <span
+                                                    style={{
+                                                        fontSize: '11px',
+                                                        fontWeight: 700,
+                                                        padding: '2px 8px',
+                                                        borderRadius: '6px',
+                                                        textTransform: 'uppercase',
+                                                        letterSpacing: '0.4px',
+                                                        backgroundColor: group.type === 'name' ? '#e0f2fe' : group.type === 'title' ? '#fef3c7' : '#ede9fe',
+                                                        color: group.type === 'name' ? '#0369a1' : group.type === 'title' ? '#b45309' : '#6d28d9'
+                                                    }}
+                                                >
+                                                    {group.type === 'name' ? 'Nome' : group.type === 'title' ? 'Título' : 'CPF'}
+                                                </span>
+                                                <strong style={{ fontSize: '14px', color: '#1e293b' }}>
+                                                    {group.title}
+                                                </strong>
+                                            </div>
+                                            <span style={{ fontSize: '12px', color: '#64748b' }}>
+                                                {group.reason}
+                                            </span>
+                                        </div>
+
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <Table>
+                                                <TableHeader>
+                                                    <TableRow style={{ background: '#fafafa' }}>
+                                                        <TableHead style={{ width: '40px', fontSize: '12px' }}>#</TableHead>
+                                                        <TableHead style={{ fontSize: '12px' }}>Nome completo</TableHead>
+                                                        <TableHead style={{ fontSize: '12px' }}>Título</TableHead>
+                                                        <TableHead style={{ fontSize: '12px' }}>Zona / Seção</TableHead>
+                                                        <TableHead style={{ fontSize: '12px' }}>Celular</TableHead>
+                                                        <TableHead style={{ fontSize: '12px' }}>Indicação</TableHead>
+                                                        <TableHead style={{ fontSize: '12px' }}>Endereço</TableHead>
+                                                        <TableHead style={{ width: '100px', textAlign: 'center', fontSize: '12px' }}>Ações</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {group.items.map((person, pIdx) => (
+                                                        <TableRow key={person.id}>
+                                                            <TableCell style={{ fontSize: '12px', color: '#94a3b8' }}>
+                                                                {pIdx + 1}
+                                                            </TableCell>
+                                                            <TableCell style={{ fontWeight: 600, fontSize: '13px' }}>
+                                                                {shown(person.name)}
+                                                                {person.marked && (
+                                                                    <span style={{ marginLeft: '6px', fontSize: '10px', padding: '1px 5px', background: '#dcfce7', color: '#15803d', borderRadius: '4px', fontWeight: 700 }}>
+                                                                        Marcado
+                                                                    </span>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell style={{ fontSize: '13px', fontFamily: 'monospace' }}>
+                                                                {shown(person.title)}
+                                                            </TableCell>
+                                                            <TableCell style={{ fontSize: '13px' }}>
+                                                                Z: {person.zone} / S: {person.section}
+                                                            </TableCell>
+                                                            <TableCell style={{ fontSize: '13px' }}>
+                                                                {shown(person.phone)}
+                                                            </TableCell>
+                                                            <TableCell style={{ fontSize: '13px' }}>
+                                                                {shown(person.indication)}
+                                                            </TableCell>
+                                                            <TableCell style={{ fontSize: '12px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={person.address || undefined}>
+                                                                {shown(person.address)}
+                                                            </TableCell>
+                                                            <TableCell style={{ textAlign: 'center' }}>
+                                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        title="Editar cadastro"
+                                                                        style={{ height: '30px', width: '30px' }}
+                                                                        onClick={() => {
+                                                                            setDuplicatesModalOpen(false);
+                                                                            start(person);
+                                                                        }}
+                                                                    >
+                                                                        <Pencil size={14} />
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        title="Excluir este cadastro duplicado"
+                                                                        style={{ height: '30px', width: '30px', color: '#e11d48' }}
+                                                                        onClick={() => {
+                                                                            if (window.confirm(`Deseja realmente excluir este cadastro duplicado de "${person.name || 'Sem nome'}"?`)) {
+                                                                                removePerson(person.id);
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </Button>
+                                                                </div>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="modal-footer" style={{ marginTop: '20px', paddingTop: '16px' }}>
+                        <span style={{ fontSize: '13px', color: '#64748b' }}>
+                            {duplicateGroups.length > 0
+                                ? `${duplicateGroups.length} grupo(s) de duplicados detectados.`
+                                : 'Nenhum conflito encontrado.'}
+                        </span>
+                        <Button type="button" variant="outline" onClick={() => setDuplicatesModalOpen(false)}>
+                            Fechar
+                        </Button>
                     </div>
                 </DialogContent>
             </Dialog>
