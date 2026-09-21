@@ -207,3 +207,12 @@ export function parseAddress(rawAddress?: string | null): { street: string; neig
 
     return { street: trimmed, neighborhood: '' };
 }
+
+export function shouldShowPlace(rawPlace?: string | null): boolean {
+    if (!rawPlace || typeof rawPlace !== 'string') return false;
+    const clean = rawPlace.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!clean) return false;
+    if (/^(nao informado|não informado|n\/a|null|undefined|-|—)$/i.test(clean)) return false;
+    if (clean === 'kaio' || clean === 'caio' || clean === 'solange') return false;
+    return true;
+}
