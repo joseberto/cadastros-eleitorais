@@ -30,7 +30,9 @@ import {
     ChevronsRight,
     SlidersHorizontal,
     MapPin,
-    CopyCheck
+    CopyCheck,
+    PhoneOff,
+    FileQuestion
 } from 'lucide-react';
 import { Card, DeiaCard } from '@/app/report-card';
 import { Button } from '@/components/ui/button';
@@ -235,10 +237,20 @@ export default function App() {
     }, [toggleMarkPerson]);
 
     const [selectedIndication, setSelectedIndication] = useState<string>('all');
+    const [selectedSpecialOption, setSelectedSpecialOption] = useState<'no-phone' | 'no-title' | null>(null);
     const [selectedMarkedFilter, setSelectedMarkedFilter] = useState<'all' | 'marked' | 'unmarked'>('all');
     const [filterMenuOpen, setFilterMenuOpen] = useState(false);
     const [hoveredIndication, setHoveredIndication] = useState<string | null>(null);
     const filterDropdownRef = useRef<HTMLDivElement>(null);
+
+    // Contagens para opções especiais
+    const noPhoneCount = useMemo(() => {
+        return records.filter(p => !digits(p.phone)).length;
+    }, [records]);
+
+    const noTitleCount = useMemo(() => {
+        return records.filter(p => !digits(p.title)).length;
+    }, [records]);
 
     // Fechar menu de filtro ao clicar fora
     useEffect(() => {
@@ -324,7 +336,11 @@ export default function App() {
 
     const filteredRecords = useMemo(() => {
         let list = records;
-        if (selectedIndication === 'none') {
+        if (selectedSpecialOption === 'no-phone') {
+            list = list.filter(p => !digits(p.phone));
+        } else if (selectedSpecialOption === 'no-title') {
+            list = list.filter(p => !digits(p.title));
+        } else if (selectedIndication === 'none') {
             list = list.filter(p => !(p.indication || '').trim());
         } else if (selectedIndication !== 'all') {
             list = list.filter(p => (p.indication || '').trim().toLowerCase() === selectedIndication.toLowerCase());
@@ -353,9 +369,20 @@ export default function App() {
                 .replace(/[\u0300-\u036f]/g, '');
             return searchable.includes(term);
         });
-    }, [records, selectedIndication, selectedMarkedFilter, searchTerm, placeSearch]);
+    }, [records, selectedSpecialOption, selectedIndication, selectedMarkedFilter, searchTerm, placeSearch]);
 
     const activeFilterLabel = useMemo(() => {
+        if (selectedSpecialOption === 'no-phone') {
+            if (selectedMarkedFilter === 'marked') return `Sem celular · Marcados (${filteredRecords.length})`;
+            if (selectedMarkedFilter === 'unmarked') return `Sem celular · Não marcados (${filteredRecords.length})`;
+            return `Sem celular (${filteredRecords.length})`;
+        }
+        if (selectedSpecialOption === 'no-title') {
+            if (selectedMarkedFilter === 'marked') return `Sem título · Marcados (${filteredRecords.length})`;
+            if (selectedMarkedFilter === 'unmarked') return `Sem título · Não marcados (${filteredRecords.length})`;
+            return `Sem título (${filteredRecords.length})`;
+        }
+
         let name = 'Todas as indicações';
         if (selectedIndication === 'none') {
             name = 'Sem indicação';
@@ -370,7 +397,7 @@ export default function App() {
             return `${name} · Não marcados (${filteredRecords.length})`;
         }
         return `${name} (${filteredRecords.length})`;
-    }, [selectedIndication, selectedMarkedFilter, filteredRecords.length]);
+    }, [selectedSpecialOption, selectedIndication, selectedMarkedFilter, filteredRecords.length]);
 
     // Marcar ou desmarcar todos os registros filtrados
     const markFilteredRecords = useCallback((mark: boolean) => {
@@ -393,7 +420,7 @@ export default function App() {
     // Retorna à página 1 caso os filtros, ordenação ou tamanho de página mudem
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, placeSearch, selectedIndication, selectedMarkedFilter, sort, desc, pageSize]);
+    }, [searchTerm, placeSearch, selectedSpecialOption, selectedIndication, selectedMarkedFilter, sort, desc, pageSize]);
 
     // Garante que a página atual seja válida caso o número total de páginas diminua
     useEffect(() => {
@@ -525,15 +552,19 @@ export default function App() {
             setNotice('Nenhum cadastro no filtro atual para exportar.');
             return;
         }
-        let suffix = selectedIndication !== 'all' && selectedIndication !== 'none'
+        let suffix = selectedSpecialOption === 'no-phone'
+            ? 'filtro-sem-celular'
+            : selectedSpecialOption === 'no-title'
+            ? 'filtro-sem-titulo'
+            : selectedIndication !== 'all' && selectedIndication !== 'none'
             ? `filtro-${selectedIndication.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
             : selectedIndication === 'none'
-                ? 'filtro-sem_indicacao'
-                : 'filtrados';
+            ? 'filtro-sem_indicacao'
+            : 'filtrados';
         if (selectedMarkedFilter === 'marked') suffix += '-marcados';
         else if (selectedMarkedFilter === 'unmarked') suffix += '-nao_marcados';
         exportData(filteredRecords, suffix, 'Filtro atual');
-    }, [exportData, filteredRecords, selectedIndication, selectedMarkedFilter]);
+    }, [exportData, filteredRecords, selectedSpecialOption, selectedIndication, selectedMarkedFilter]);
 
     function resetToDefault() {
         if (window.confirm('Deseja restaurar a lista original de cadastros? Alterações não exportadas serão sobrescritas.')) {
@@ -1101,7 +1132,7 @@ export default function App() {
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <span>Filtrar por indicação</span>
+                                <span>Filtrar por</span>
 
                                 <div
                                     ref={filterDropdownRef}
@@ -1137,8 +1168,88 @@ export default function App() {
                                             role="menu"
                                             onMouseLeave={() => setHoveredIndication(null)}
                                         >
+                                            {/* Opções especiais (Sem celular, Sem título) */}
+                                            <div
+                                                className="filter-parent-item-container"
+                                                onMouseEnter={() => setHoveredIndication('__options__')}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    className={`filter-item ${selectedSpecialOption !== null ? 'active' : ''}`}
+                                                    role="menuitem"
+                                                    onClick={() => {
+                                                        setHoveredIndication(prev => prev === '__options__' ? null : '__options__');
+                                                    }}
+                                                >
+                                                    <div className="filter-item-content">
+                                                        <SlidersHorizontal size={14} color="#127c80" style={{ flexShrink: 0 }} />
+                                                        <span>Opções</span>
+                                                    </div>
+                                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                        {selectedSpecialOption !== null && <Check size={14} className="filter-item-check" />}
+                                                        <ChevronRight size={14} className="filter-item-arrow" />
+                                                    </div>
+                                                </button>
+
+                                                {/* Submenu de Opções */}
+                                                {hoveredIndication === '__options__' && (
+                                                    <div
+                                                        className="filter-submenu"
+                                                        role="menu"
+                                                        onMouseEnter={() => setHoveredIndication('__options__')}
+                                                    >
+                                                        <div style={{ padding: '4px 10px 6px', fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #f1f5f9' }}>
+                                                            Opções
+                                                        </div>
+
+                                                        <button
+                                                            type="button"
+                                                            className={`filter-subitem ${selectedSpecialOption === 'no-phone' ? 'active' : ''}`}
+                                                            role="menuitem"
+                                                            onClick={() => {
+                                                                setSelectedSpecialOption('no-phone');
+                                                                setSelectedIndication('all');
+                                                                setSelectedMarkedFilter('all');
+                                                                setFilterMenuOpen(false);
+                                                                setHoveredIndication(null);
+                                                            }}
+                                                        >
+                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                                                                <PhoneOff size={14} color="#64748b" />
+                                                                <span>Sem celular</span>
+                                                                <span className="filter-item-badge">({noPhoneCount})</span>
+                                                            </div>
+                                                            {selectedSpecialOption === 'no-phone' && <Check size={14} />}
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
+                                                            className={`filter-subitem ${selectedSpecialOption === 'no-title' ? 'active' : ''}`}
+                                                            role="menuitem"
+                                                            onClick={() => {
+                                                                setSelectedSpecialOption('no-title');
+                                                                setSelectedIndication('all');
+                                                                setSelectedMarkedFilter('all');
+                                                                setFilterMenuOpen(false);
+                                                                setHoveredIndication(null);
+                                                            }}
+                                                        >
+                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                                                                <FileQuestion size={14} color="#64748b" />
+                                                                <span>Sem título</span>
+                                                                <span className="filter-item-badge">({noTitleCount})</span>
+                                                            </div>
+                                                            {selectedSpecialOption === 'no-title' && <Check size={14} />}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="options-dropdown-divider" style={{ margin: '3px 4px' }} />
+
+                                            {/* Indicações */}
                                             {indicationFilterItems.map(item => {
-                                                const isIndicationSelected = selectedIndication.toLowerCase() === item.key.toLowerCase();
+                                                const isIndicationSelected = selectedSpecialOption === null && selectedIndication.toLowerCase() === item.key.toLowerCase();
                                                 const hasSubmenu = item.marked > 0;
 
                                                 if (!hasSubmenu) {
@@ -1150,6 +1261,7 @@ export default function App() {
                                                             className={`filter-item ${isIndicationSelected ? 'active' : ''}`}
                                                             role="menuitem"
                                                             onClick={() => {
+                                                                setSelectedSpecialOption(null);
                                                                 setSelectedIndication(item.key);
                                                                 setSelectedMarkedFilter('all');
                                                                 setFilterMenuOpen(false);
@@ -1179,6 +1291,7 @@ export default function App() {
                                                             className={`filter-item ${isIndicationSelected ? 'active' : ''}`}
                                                             role="menuitem"
                                                             onClick={() => {
+                                                                setSelectedSpecialOption(null);
                                                                 setSelectedIndication(item.key);
                                                                 setSelectedMarkedFilter('all');
                                                                 setFilterMenuOpen(false);
@@ -1211,6 +1324,7 @@ export default function App() {
                                                                     className={`filter-subitem ${isIndicationSelected && selectedMarkedFilter === 'all' ? 'active' : ''}`}
                                                                     role="menuitem"
                                                                     onClick={() => {
+                                                                        setSelectedSpecialOption(null);
                                                                         setSelectedIndication(item.key);
                                                                         setSelectedMarkedFilter('all');
                                                                         setFilterMenuOpen(false);
@@ -1229,6 +1343,7 @@ export default function App() {
                                                                     className={`filter-subitem ${isIndicationSelected && selectedMarkedFilter === 'marked' ? 'active' : ''}`}
                                                                     role="menuitem"
                                                                     onClick={() => {
+                                                                        setSelectedSpecialOption(null);
                                                                         setSelectedIndication(item.key);
                                                                         setSelectedMarkedFilter('marked');
                                                                         setFilterMenuOpen(false);
@@ -1248,6 +1363,7 @@ export default function App() {
                                                                         className={`filter-subitem ${isIndicationSelected && selectedMarkedFilter === 'unmarked' ? 'active' : ''}`}
                                                                         role="menuitem"
                                                                         onClick={() => {
+                                                                            setSelectedSpecialOption(null);
                                                                             setSelectedIndication(item.key);
                                                                             setSelectedMarkedFilter('unmarked');
                                                                             setFilterMenuOpen(false);
@@ -1313,11 +1429,12 @@ export default function App() {
                                     </div>
                                 )}
 
-                                {(selectedIndication !== 'all' || selectedMarkedFilter !== 'all') && (
+                                {(selectedSpecialOption !== null || selectedIndication !== 'all' || selectedMarkedFilter !== 'all') && (
                                     <Button
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => {
+                                            setSelectedSpecialOption(null);
                                             setSelectedIndication('all');
                                             setSelectedMarkedFilter('all');
                                         }}
@@ -1527,21 +1644,26 @@ export default function App() {
                                     <UsersRound size={30} />
                                 </span>
                                 <h3>
-                                    {selectedIndication !== 'all'
+                                    {selectedSpecialOption === 'no-phone'
+                                        ? 'Nenhum cadastro sem celular encontrado'
+                                        : selectedSpecialOption === 'no-title'
+                                        ? 'Nenhum cadastro sem título encontrado'
+                                        : selectedIndication !== 'all'
                                         ? `Nenhum cadastro encontrado para "${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}"`
                                         : (searchTerm || placeSearch)
                                             ? 'Nenhum resultado encontrado'
                                             : 'Sua lista está vazia'}
                                 </h3>
                                 <p>
-                                    {selectedIndication !== 'all' || searchTerm || placeSearch || selectedMarkedFilter !== 'all'
+                                    {selectedSpecialOption !== null || selectedIndication !== 'all' || searchTerm || placeSearch || selectedMarkedFilter !== 'all'
                                         ? 'Tente alterar os filtros ou limpar as buscas.'
                                         : 'Adicione o primeiro cadastro ou importe um arquivo JSON.'}
                                 </p>
-                                {(selectedIndication !== 'all' || searchTerm || placeSearch || selectedMarkedFilter !== 'all') && (
+                                {(selectedSpecialOption !== null || selectedIndication !== 'all' || searchTerm || placeSearch || selectedMarkedFilter !== 'all') && (
                                     <Button
                                         variant="outline"
                                         onClick={() => {
+                                            setSelectedSpecialOption(null);
                                             setSelectedIndication('all');
                                             setSelectedMarkedFilter('all');
                                             setSearchTerm('');
@@ -1562,7 +1684,9 @@ export default function App() {
                         <footer className="table-footer">
                             <span>
                                 {records.length} {records.length === 1 ? 'cadastro' : 'cadastros'}
-                                {selectedIndication !== 'all' && ` · Filtrado por: "${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}" (${sorted.length})`}
+                                {selectedSpecialOption === 'no-phone' && ` · Filtrado por: "Sem celular" (${sorted.length})`}
+                                {selectedSpecialOption === 'no-title' && ` · Filtrado por: "Sem título" (${sorted.length})`}
+                                {selectedSpecialOption === null && selectedIndication !== 'all' && ` · Filtrado por: "${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}" (${sorted.length})`}
                                 {(searchTerm || placeSearch) && ` (${sorted.length} na busca)`}
                             </span>
                             <button
@@ -2056,7 +2180,13 @@ export default function App() {
                             <strong>Prévia de impressão {isDeia ? '· Modelo Deia' : ''}</strong>
                             <span>
                                 {sorted.length} fichas · {pages.length} páginas · {orderLabels[sort]}
-                                {selectedIndication !== 'all' ? ` · Indicação: ${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}` : ''}
+                                {selectedSpecialOption === 'no-phone'
+                                    ? ' · Sem celular'
+                                    : selectedSpecialOption === 'no-title'
+                                    ? ' · Sem título'
+                                    : selectedIndication !== 'all'
+                                    ? ` · Indicação: ${selectedIndication === 'none' ? 'Sem indicação' : selectedIndication}`
+                                    : ''}
                             </span>
                         </div>
                         <Button disabled={!printReady} onClick={() => window.print()}>
