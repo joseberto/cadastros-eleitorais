@@ -210,9 +210,10 @@ export function parseAddress(rawAddress?: string | null): { street: string; neig
 
 export function shouldShowPlace(rawPlace?: string | null): boolean {
     if (!rawPlace || typeof rawPlace !== 'string') return false;
-    const clean = rawPlace.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const clean = rawPlace.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').trim();
     if (!clean) return false;
-    if (/^(nao informado|não informado|n\/a|null|undefined|-|—)$/i.test(clean)) return false;
+    if (/^(nao informado|nao informada|n\/a|na|null|undefined|nenhum|nenhuma|sem local|-|—)$/i.test(clean)) return false;
     if (clean === 'kaio' || clean === 'caio' || clean === 'solange') return false;
     return true;
 }
+
